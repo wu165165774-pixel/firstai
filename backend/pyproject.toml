@@ -1,0 +1,21 @@
+[project]
+name = "novelforge-backend"
+version = "0.1.0"
+description = "AI Novel Writing Engine Backend"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi>=0.116.0",
+    "uvicorn[standard]>=0.35.0",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.10.0",
+    "python-dotenv>=1.1.0",
+    "loguru>=0.7.3"
+]
+
+
+[build-system]
+requires = [
+    "setuptools>=68"
+]
+build-backend = "setuptools.build_meta"
