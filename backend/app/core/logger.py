@@ -1,9 +1,12 @@
+
 from loguru import logger
 
 import sys
 
 
+
 logger.remove()
+
 
 
 logger.add(
@@ -12,6 +15,9 @@ logger.add(
 )
 
 
-__all__ = [
-    "logger"
-]
+logger.add(
+    "logs/novelforge.log",
+    rotation="10 MB",
+    retention="30 days",
+    level="INFO"
+)

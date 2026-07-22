@@ -1,18 +1,45 @@
-from typing import Any
+from typing import Generic, TypeVar
+
+from pydantic import BaseModel
+
+
+T = TypeVar("T")
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    """
+    NovelForge统一API响应格式
+    """
+
+    code: int = 0
+
+    message: str = "OK"
+
+    data: T | None = None
+
 
 
 def success(
-    data: Any = None,
+    data: T | None = None,
     message: str = "OK"
-):
+) -> ApiResponse[T]:
 
-    return {
+    return ApiResponse(
+        code=0,
+        message=message,
+        data=data
+    )
 
-        "success": True,
 
-        "code": 0,
 
-        "message": message,
+def failure(
+    code: int,
+    message: str,
+    data=None
+) -> ApiResponse:
 
-        "data": data
-    }
+    return ApiResponse(
+        code=code,
+        message=message,
+        data=data
+    )
