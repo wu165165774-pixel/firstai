@@ -1,36 +1,83 @@
+# =====================
 # Python
+# =====================
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
 
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =====================
 # Environment
+# =====================
 .env
+.env.*
+!.env.example
 
-# Virtual env
+# =====================
+# Virtual Environment
+# =====================
 .venv/
 venv/
 
+
+# =====================
 # IDE
+# =====================
 .vscode/
 .idea/
 
-# Data
+
+# =====================
+# Runtime Data
+# =====================
+
+# Application data
 data/*
 !data/.gitkeep
 
-# Vector database
-vector_db/
-
-# Graph database
-graph_data/
-
 # Logs
 logs/
+*.log
 
+
+# =====================
+# Vector Database
+# =====================
+
+# FAISS / Chroma / embeddings
+vector_db/
+
+
+# =====================
+# Graph Database
+# =====================
+
+graph_data/
+
+
+# =====================
 # Frontend
+# =====================
+
 frontend/node_modules/
 frontend/dist/
 
+
+# =====================
+# Docker
+# =====================
+
+docker-compose.override.yml
+
+
+# =====================
 # OS
+# =====================
+
 .DS_Store
 Thumbs.db
