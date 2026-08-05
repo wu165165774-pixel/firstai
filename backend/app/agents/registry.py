@@ -9,7 +9,7 @@ from app.agents.errors import (
 
 class AgentRegistry:
     """
-    Agent ?????
+    Agent 注册表。
     """
 
     def __init__(self) -> None:

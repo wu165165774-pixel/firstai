@@ -11,14 +11,14 @@ from app.agents.schemas import (
 
 class BaseAgent(ABC):
     """
-    NovelForge Agent ???????
+    NovelForge Agent 抽象基类。
     """
 
     @property
     @abstractmethod
     def name(self) -> str:
         """
-        Agent ?????
+        Agent 名称。
         """
         raise NotImplementedError
 
@@ -26,7 +26,7 @@ class BaseAgent(ABC):
     @abstractmethod
     def description(self) -> str:
         """
-        Agent ?????
+        Agent 描述。
         """
         raise NotImplementedError
 
@@ -36,6 +36,6 @@ class BaseAgent(ABC):
         context: AgentContext,
     ) -> AgentResult:
         """
-        ?? Agent ???
+        执行 Agent 任务。
         """
         raise NotImplementedError
