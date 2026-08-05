@@ -5,10 +5,11 @@ from typing import Any
 
 from loguru import logger
 
-from app.memory.retriever import MemoryRetriever
 from app.memory.storage.sqlite import SQLiteMemoryStorage
 from app.rag.memory_indexer import memory_indexer
-
+from app.memory.hybrid_retriever import (
+    hybrid_memory_retriever,
+)
 
 class MemoryManager:
 
@@ -20,9 +21,7 @@ class MemoryManager:
             "sqlite": sqlite_storage,
         }
 
-        self.retriever = MemoryRetriever(
-            sqlite_storage
-        )
+
 
     async def _sync_memory_to_faiss(
         self,
@@ -235,20 +234,39 @@ class MemoryManager:
         novel_id: str,
         query: str,
         top_k: int = 10,
-    ):
+    ) -> list[dict]:
         """
-        保留原有 Retriever 接口。
+        使用 FAISS 语义召回与 SQLite 记忆评分进行混合检索。
 
-        注意：正式聊天上下文目前使用的是
-        HybridMemoryRetriever。
+        返回普通字典，便于 FastAPI JSON 序列化。
         """
 
-        return await self.retriever.retrieve(
-            user_id,
-            novel_id,
-            query,
-            top_k,
+        results = (
+            await hybrid_memory_retriever.retrieve(
+                user_id=user_id,
+                novel_id=novel_id,
+                query=query,
+                top_k=top_k,
+                min_similarity=0.35,
+            )
         )
+
+        return [
+            {
+                "id": item.memory_id,
+                "user_id": item.user_id,
+                "novel_id": item.novel_id,
+                "memory_type": item.memory_type,
+                "content": item.content,
+                "importance": item.importance,
+                "hit_count": item.hit_count,
+                "base_score": item.base_score,
+                "similarity": item.similarity,
+                "hybrid_score": item.hybrid_score,
+            }
+            for item in results
+        ]
+
 
 
 memory_manager = MemoryManager()
