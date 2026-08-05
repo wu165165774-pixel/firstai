@@ -7,16 +7,24 @@ from json import (
     JSONDecodeError,
     JSONDecoder,
 )
+from statistics import mean
 from typing import Any
 
 from pydantic import ValidationError
 
 from app.agents.manager import AgentManager
 from app.agents.schemas import AgentContext
+from app.workflows.quality import (
+    QualityTracker,
+    build_revision_diff,
+)
 from app.workflows.schemas import (
     ChapterWorkflowRequest,
     ChapterWorkflowResult,
     ReviewReport,
+    ReviewScores,
+    RevisionDiffSummary,
+    TrackedIssue,
     WorkflowStep,
     WorkflowUsage,
 )
@@ -34,6 +42,15 @@ class ChapterWorkflow:
     Generate, review, rewrite, and re-review
     a complete novel chapter.
     """
+
+    _score_dimensions = (
+        "continuity",
+        "character_consistency",
+        "world_consistency",
+        "plot_logic",
+        "prose_quality",
+        "pacing",
+    )
 
     def __init__(
         self,
@@ -239,6 +256,345 @@ class ChapterWorkflow:
             "a valid JSON object."
         )
 
+    @staticmethod
+    def _clamp_score(
+        value: Any,
+        fallback: float,
+    ) -> float:
+
+        try:
+
+            score = float(value)
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+
+            score = fallback
+
+        return round(
+            max(
+                0.0,
+                min(
+                    100.0,
+                    score,
+                ),
+            ),
+            2,
+        )
+
+    @classmethod
+    def _normalize_scores(
+        cls,
+        payload: dict[str, Any],
+    ) -> tuple[
+        dict[str, float],
+        bool,
+        bool,
+    ]:
+
+        raw_scores = (
+            payload.get("scores")
+            or payload.get(
+                "quality_scores"
+            )
+        )
+
+        approved = bool(
+            payload.get(
+                "approved",
+                False,
+            )
+        )
+
+        issues = (
+            payload.get("issues")
+            or []
+        )
+
+        if not isinstance(
+            raw_scores,
+            dict,
+        ):
+
+            penalties = {
+                "critical": 45.0,
+                "major": 30.0,
+                "moderate": 15.0,
+                "minor": 5.0,
+            }
+
+            highest_penalty = max(
+                [
+                    penalties.get(
+                        str(
+                            issue.get(
+                                "severity",
+                                "",
+                            )
+                        ).lower(),
+                        0.0,
+                    )
+                    for issue in issues
+                    if isinstance(
+                        issue,
+                        dict,
+                    )
+                ]
+                or [
+                    0.0
+                ]
+            )
+
+            base = (
+                90.0
+                if approved
+                else 72.0
+            )
+
+            inferred = max(
+                25.0,
+                base - highest_penalty,
+            )
+
+            return (
+                {
+                    name: inferred
+                    for name
+                    in cls._score_dimensions
+                }
+                | {
+                    "overall": inferred
+                },
+                True,
+                False,
+            )
+
+        aliases = {
+            "continuity": (
+                "continuity",
+            ),
+            "character_consistency": (
+                "character_consistency",
+                "character",
+                "characters",
+            ),
+            "world_consistency": (
+                "world_consistency",
+                "world",
+                "worldbuilding",
+            ),
+            "plot_logic": (
+                "plot_logic",
+                "plot",
+                "logic",
+            ),
+            "prose_quality": (
+                "prose_quality",
+                "prose",
+                "style",
+            ),
+            "pacing": (
+                "pacing",
+                "pace",
+            ),
+        }
+
+        collected: dict[
+            str,
+            float,
+        ] = {}
+
+        raw_values: list[float] = []
+
+        for aliases_for_name in (
+            aliases.values()
+        ):
+
+            for alias in aliases_for_name:
+
+                if alias not in raw_scores:
+                    continue
+
+                try:
+
+                    raw_values.append(
+                        float(
+                            raw_scores[
+                                alias
+                            ]
+                        )
+                    )
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+
+                    pass
+
+                break
+
+        scale_by_ten = bool(
+            raw_values
+            and max(raw_values) <= 10.0
+        )
+
+        for name, aliases_for_name in (
+            aliases.items()
+        ):
+
+            value: Any = None
+
+            for alias in aliases_for_name:
+
+                if alias in raw_scores:
+
+                    value = raw_scores[
+                        alias
+                    ]
+                    break
+
+            if scale_by_ten:
+
+                try:
+
+                    value = (
+                        float(value)
+                        * 10.0
+                    )
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+
+                    pass
+
+            collected[name] = (
+                cls._clamp_score(
+                    value,
+                    75.0,
+                )
+            )
+
+        overall_value = (
+            raw_scores.get("overall")
+            if "overall" in raw_scores
+            else raw_scores.get(
+                "overall_score"
+            )
+        )
+
+        if scale_by_ten:
+
+            try:
+
+                overall_value = (
+                    float(overall_value)
+                    * 10.0
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+
+                pass
+
+        overall_fallback = mean(
+            collected.values()
+        )
+
+        collected["overall"] = (
+            cls._clamp_score(
+                overall_value,
+                overall_fallback,
+            )
+        )
+
+        return (
+            collected,
+            False,
+            scale_by_ten,
+        )
+
+    @classmethod
+    def _normalize_review_payload(
+        cls,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+
+        normalized = dict(
+            payload
+        )
+
+        issues = normalized.get(
+            "issues",
+            [],
+        )
+
+        if not isinstance(
+            issues,
+            list,
+        ):
+
+            issues = []
+
+        normalized_issues: list[
+            dict[str, Any]
+        ] = []
+
+        for issue in issues:
+
+            if not isinstance(
+                issue,
+                dict,
+            ):
+
+                continue
+
+            normalized_issue = dict(
+                issue
+            )
+
+            normalized_issue.setdefault(
+                "issue_id",
+                "",
+            )
+
+            normalized_issues.append(
+                normalized_issue
+            )
+
+        normalized["issues"] = (
+            normalized_issues
+        )
+
+        (
+            scores,
+            scores_inferred,
+            scores_normalized,
+        ) = cls._normalize_scores(
+            normalized
+        )
+
+        normalized["scores"] = scores
+        normalized["scores_inferred"] = (
+            scores_inferred
+        )
+        normalized["scores_normalized"] = (
+            scores_normalized
+        )
+
+        normalized.pop(
+            "quality_scores",
+            None,
+        )
+
+        return normalized
+
     @classmethod
     def _parse_review(
         cls,
@@ -251,8 +607,15 @@ class ChapterWorkflow:
                 content
             )
 
+            normalized = (
+                cls
+                ._normalize_review_payload(
+                    payload
+                )
+            )
+
             return ReviewReport.model_validate(
-                payload
+                normalized
             )
 
         except (
@@ -265,22 +628,62 @@ class ChapterWorkflow:
             ) from exc
 
     @staticmethod
+    def _tracked_issues_json(
+        issues: list[TrackedIssue],
+    ) -> str:
+
+        return json.dumps(
+            [
+                issue.model_dump()
+                for issue in issues
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    @classmethod
     def _review_instruction(
+        cls,
         content: str,
         round_index: int,
+        unresolved_issues: list[
+            TrackedIssue
+        ],
+        request: ChapterWorkflowRequest,
     ) -> str:
+
+        unresolved_json = (
+            cls._tracked_issues_json(
+                unresolved_issues
+            )
+        )
 
         return (
             "Review the supplied chapter against "
             "retrieved long-term memory. Return "
             "exactly one JSON object without Markdown "
             "or code fences.\n\n"
+            "Score every dimension from 0 to 100. "
+            "Use the same issue_id when a previously "
+            "tracked issue still exists. Omit an old "
+            "issue when it is resolved. Leave issue_id "
+            "empty for a newly discovered issue.\n\n"
             "Required JSON schema:\n"
             "{\n"
             '  "approved": true,\n'
             '  "summary": "short review summary",\n'
+            '  "scores": {\n'
+            '    "continuity": 0,\n'
+            '    "character_consistency": 0,\n'
+            '    "world_consistency": 0,\n'
+            '    "plot_logic": 0,\n'
+            '    "prose_quality": 0,\n'
+            '    "pacing": 0,\n'
+            '    "overall": 0\n'
+            "  },\n"
             '  "issues": [\n'
             "    {\n"
+            '      "issue_id": "ISSUE-001 or empty",\n'
             '      "severity": '
             '"critical|major|moderate|minor",\n'
             '      "category": "issue category",\n'
@@ -292,73 +695,170 @@ class ChapterWorkflow:
             "  ]\n"
             "}\n\n"
             "Set approved to false when the chapter "
-            "contains a confirmed conflict or requires "
-            "substantive correction. Do not invent "
-            "missing canon to explain a conflict. "
-            "Unsupported facts must be marked as "
-            "unconfirmed.\n"
+            "contains a confirmed conflict, requires "
+            "substantive correction, or does not meet "
+            "the configured quality thresholds. Do not "
+            "invent missing canon to explain a conflict."
+            "\n\n"
+            "QUALITY_THRESHOLDS\n"
+            f"minimum_overall_score="
+            f"{request.minimum_overall_score}\n"
+            f"minimum_dimension_score="
+            f"{request.minimum_dimension_score}\n"
+            "require_all_issues_resolved="
+            f"{request.require_all_issues_resolved}\n"
+            "QUALITY_THRESHOLDS_END\n\n"
+            "PREVIOUS_UNRESOLVED_ISSUES\n"
+            + unresolved_json
+            + "\nPREVIOUS_UNRESOLVED_ISSUES_END\n\n"
             f"This is review round {round_index}.\n\n"
             "CHAPTER_BEGIN\n"
             + content
             + "\nCHAPTER_END"
         )
 
-    @staticmethod
+    @classmethod
     def _rewrite_instruction(
+        cls,
         content: str,
         review: ReviewReport,
+        unresolved_issues: list[
+            TrackedIssue
+        ],
         round_index: int,
+        request: ChapterWorkflowRequest,
     ) -> str:
 
-        review_json = json.dumps(
-            review.model_dump(),
+        score_json = json.dumps(
+            review.scores.model_dump(),
             ensure_ascii=False,
             indent=2,
         )
 
+        unresolved_json = (
+            cls._tracked_issues_json(
+                unresolved_issues
+            )
+        )
+
         return (
-            "Revise the chapter using the review "
-            "report below.\n\n"
+            "Revise the chapter using only the "
+            "currently unresolved issues and quality "
+            "scores below.\n\n"
             "Rules:\n"
-            "1. Correct all confirmed conflicts.\n"
-            "2. Preserve confirmed character, world, "
+            "1. Correct every listed unresolved issue.\n"
+            "2. Improve score dimensions that are below "
+            "the configured thresholds.\n"
+            "3. Preserve confirmed character, world, "
             "and plot facts.\n"
-            "3. Do not create new canon to explain "
+            "4. Do not create new canon to explain "
             "unsupported statements.\n"
-            "4. Preserve the intended scene, style, "
+            "5. Preserve the intended scene, style, "
             "point of view, and event outcome.\n"
-            "5. Implement at least one concrete textual "
+            "6. Implement at least one concrete textual "
             "change that addresses the review report.\n"
-            "6. Do not return the source text unchanged. "
+            "7. Do not return the source text unchanged. "
             "The revised output must differ from the "
             "input while preserving confirmed facts.\n"
-            "7. Output only the complete revised "
+            "8. Output only the complete revised "
             "chapter.\n"
-            f"8. This is revision round {round_index}.\n\n"
-            "REVIEW_REPORT_BEGIN\n"
-            + review_json
-            + "\nREVIEW_REPORT_END\n\n"
+            f"9. This is revision round {round_index}."
+            "\n\n"
+            "QUALITY_THRESHOLDS\n"
+            f"minimum_overall_score="
+            f"{request.minimum_overall_score}\n"
+            f"minimum_dimension_score="
+            f"{request.minimum_dimension_score}\n"
+            "QUALITY_THRESHOLDS_END\n\n"
+            "CURRENT_SCORES\n"
+            + score_json
+            + "\nCURRENT_SCORES_END\n\n"
+            "UNRESOLVED_ISSUES\n"
+            + unresolved_json
+            + "\nUNRESOLVED_ISSUES_END\n\n"
             "DRAFT_BEGIN\n"
             + content
             + "\nDRAFT_END"
         )
 
-    @staticmethod
-    def _requires_revision(
+    @classmethod
+    def _quality_gate_reasons(
+        cls,
         report: ReviewReport,
-        severities: list[str],
-    ) -> bool:
+        unresolved_issues: list[
+            TrackedIssue
+        ],
+        request: ChapterWorkflowRequest,
+    ) -> list[str]:
+
+        reasons: list[str] = []
 
         if not report.approved:
-            return True
 
-        selected = set(
-            severities
+            reasons.append(
+                "review_not_approved"
+            )
+
+        selected_severities = set(
+            request.rewrite_on_severities
         )
 
-        return any(
-            issue.severity in selected
-            for issue in report.issues
+        for issue in unresolved_issues:
+
+            if (
+                issue.severity
+                in selected_severities
+            ):
+
+                reasons.append(
+                    "severity:"
+                    f"{issue.issue_id}:"
+                    f"{issue.severity}"
+                )
+
+        if (
+            request
+            .require_all_issues_resolved
+            and unresolved_issues
+        ):
+
+            reasons.append(
+                "unresolved_issues"
+            )
+
+        if (
+            report.scores.overall
+            < request.minimum_overall_score
+        ):
+
+            reasons.append(
+                "overall_score_below_threshold"
+            )
+
+        for dimension in (
+            cls._score_dimensions
+        ):
+
+            value = getattr(
+                report.scores,
+                dimension,
+            )
+
+            if (
+                value
+                < request
+                .minimum_dimension_score
+            ):
+
+                reasons.append(
+                    "dimension_score_below_threshold:"
+                    + dimension
+                )
+
+        return list(
+            dict.fromkeys(
+                reasons
+            )
         )
 
     @staticmethod
@@ -418,6 +918,9 @@ class ChapterWorkflow:
         request: ChapterWorkflowRequest,
         current_content: str,
         review_round: int,
+        unresolved_issues: list[
+            TrackedIssue
+        ],
     ) -> tuple[
         list[WorkflowStep],
         WorkflowStep | None,
@@ -473,6 +976,8 @@ class ChapterWorkflow:
                                 ._review_instruction(
                                     current_content,
                                     review_round,
+                                    unresolved_issues,
+                                    request,
                                 )
                             ),
                             stage="review",
@@ -566,6 +1071,11 @@ class ChapterWorkflow:
         revision_rounds: int,
         quality_gate_passed: bool,
         metadata: dict[str, Any],
+        quality_tracker: QualityTracker,
+        revision_diffs: list[
+            RevisionDiffSummary
+        ],
+        quality_gate_reasons: list[str],
     ) -> ChapterWorkflowResult:
 
         latest_review = (
@@ -580,6 +1090,10 @@ class ChapterWorkflow:
             else ""
         )
 
+        unresolved = (
+            quality_tracker.unresolved()
+        )
+
         return ChapterWorkflowResult(
             status=status,
             draft=draft,
@@ -589,6 +1103,29 @@ class ChapterWorkflow:
             review_raw_history=(
                 review_raw_history
             ),
+            quality_scores=(
+                latest_review.scores
+                if latest_review
+                else None
+            ),
+            quality_score_history=[
+                report.scores
+                for report in review_history
+            ],
+            issue_tracker=(
+                quality_tracker.all_issues()
+            ),
+            issue_transitions=(
+                quality_tracker.transitions()
+            ),
+            unresolved_issue_ids=[
+                issue.issue_id
+                for issue in unresolved
+            ],
+            quality_gate_reasons=(
+                quality_gate_reasons
+            ),
+            revision_diffs=revision_diffs,
             final_content=current_content,
             revision_applied=(
                 revision_rounds > 0
@@ -614,7 +1151,52 @@ class ChapterWorkflow:
             ReviewReport
         ] = []
         review_raw_history: list[str] = []
+        revision_diffs: list[
+            RevisionDiffSummary
+        ] = []
         revision_rounds = 0
+        quality_tracker = QualityTracker()
+        quality_gate_reasons: list[str] = []
+
+        def finish(
+            *,
+            status: str,
+            draft: str,
+            current_content: str,
+            quality_gate_passed: bool,
+            metadata: dict[str, Any],
+        ) -> ChapterWorkflowResult:
+
+            return self._result(
+                status=status,
+                draft=draft,
+                current_content=(
+                    current_content
+                ),
+                steps=steps,
+                review_history=(
+                    review_history
+                ),
+                review_raw_history=(
+                    review_raw_history
+                ),
+                revision_rounds=(
+                    revision_rounds
+                ),
+                quality_gate_passed=(
+                    quality_gate_passed
+                ),
+                metadata=metadata,
+                quality_tracker=(
+                    quality_tracker
+                ),
+                revision_diffs=(
+                    revision_diffs
+                ),
+                quality_gate_reasons=(
+                    quality_gate_reasons
+                ),
+            )
 
         try:
 
@@ -648,16 +1230,10 @@ class ChapterWorkflow:
 
         except Exception as exc:
 
-            return self._result(
+            return finish(
                 status="draft_failed",
                 draft="",
                 current_content="",
-                steps=steps,
-                review_history=review_history,
-                review_raw_history=(
-                    review_raw_history
-                ),
-                revision_rounds=0,
                 quality_gate_passed=False,
                 metadata={
                     "error": str(exc),
@@ -686,16 +1262,10 @@ class ChapterWorkflow:
             or not draft.strip()
         ):
 
-            return self._result(
+            return finish(
                 status="draft_failed",
                 draft=draft,
                 current_content=draft,
-                steps=steps,
-                review_history=review_history,
-                review_raw_history=(
-                    review_raw_history
-                ),
-                revision_rounds=0,
                 quality_gate_passed=False,
                 metadata={
                     "failed_stage": "draft",
@@ -715,6 +1285,10 @@ class ChapterWorkflow:
 
         while True:
 
+            previous_unresolved = (
+                quality_tracker.unresolved()
+            )
+
             (
                 review_attempt_steps,
                 review_step,
@@ -723,6 +1297,7 @@ class ChapterWorkflow:
                 request,
                 current_content,
                 review_round,
+                previous_unresolved,
             )
 
             steps.extend(
@@ -731,21 +1306,11 @@ class ChapterWorkflow:
 
             if review_step is None:
 
-                return self._result(
+                return finish(
                     status="review_failed",
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={
@@ -781,23 +1346,13 @@ class ChapterWorkflow:
 
             except ReviewOutputParseError as exc:
 
-                return self._result(
+                return finish(
                     status=(
                         "review_parse_failed"
                     ),
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={
@@ -814,35 +1369,36 @@ class ChapterWorkflow:
                     },
                 )
 
+            review_report = (
+                quality_tracker.apply_review(
+                    review_report,
+                    review_round,
+                )
+            )
+
             review_history.append(
                 review_report
             )
 
-            requires_revision = (
-                self._requires_revision(
+            unresolved_issues = (
+                quality_tracker.unresolved()
+            )
+
+            quality_gate_reasons = (
+                self._quality_gate_reasons(
                     review_report,
-                    request
-                    .rewrite_on_severities,
+                    unresolved_issues,
+                    request,
                 )
             )
 
-            if not requires_revision:
+            if not quality_gate_reasons:
 
-                return self._result(
+                return finish(
                     status="completed",
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=True,
                     metadata={
@@ -861,26 +1417,24 @@ class ChapterWorkflow:
                         "final_review_round": (
                             review_round
                         ),
+                        "minimum_overall_score": (
+                            request
+                            .minimum_overall_score
+                        ),
+                        "minimum_dimension_score": (
+                            request
+                            .minimum_dimension_score
+                        ),
                     },
                 )
 
             if not request.auto_rewrite:
 
-                return self._result(
+                return finish(
                     status="completed",
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={
@@ -900,23 +1454,13 @@ class ChapterWorkflow:
                 >= request.max_revision_rounds
             ):
 
-                return self._result(
+                return finish(
                     status=(
                         "max_revisions_reached"
                     ),
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={
@@ -953,7 +1497,9 @@ class ChapterWorkflow:
                                 ._rewrite_instruction(
                                     current_content,
                                     review_report,
+                                    unresolved_issues,
                                     next_revision_round,
+                                    request,
                                 )
                             ),
                             stage="rewrite",
@@ -978,21 +1524,11 @@ class ChapterWorkflow:
 
             except Exception as exc:
 
-                return self._result(
+                return finish(
                     status="rewrite_failed",
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={
@@ -1028,21 +1564,11 @@ class ChapterWorkflow:
                 or not revised_content.strip()
             ):
 
-                return self._result(
+                return finish(
                     status="rewrite_failed",
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={
@@ -1056,6 +1582,20 @@ class ChapterWorkflow:
                     },
                 )
 
+            revision_diff = (
+                build_revision_diff(
+                    before=current_content,
+                    after=revised_content,
+                    round_index=(
+                        next_revision_round
+                    ),
+                )
+            )
+
+            revision_diffs.append(
+                revision_diff
+            )
+
             fingerprint = (
                 self._content_fingerprint(
                     revised_content
@@ -1064,23 +1604,13 @@ class ChapterWorkflow:
 
             if fingerprint in seen_fingerprints:
 
-                return self._result(
+                return finish(
                     status=(
                         "stagnation_detected"
                     ),
                     draft=draft,
                     current_content=(
                         current_content
-                    ),
-                    steps=steps,
-                    review_history=(
-                        review_history
-                    ),
-                    review_raw_history=(
-                        review_raw_history
-                    ),
-                    revision_rounds=(
-                        revision_rounds
                     ),
                     quality_gate_passed=False,
                     metadata={

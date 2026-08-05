@@ -21,6 +21,18 @@ ReviewSeverity = Literal[
     "minor",
 ]
 
+TrackedIssueStatus = Literal[
+    "open",
+    "resolved",
+]
+
+IssueTransitionType = Literal[
+    "new",
+    "persisting",
+    "resolved",
+    "reopened",
+]
+
 WorkflowStatus = Literal[
     "completed",
     "draft_failed",
@@ -32,11 +44,55 @@ WorkflowStatus = Literal[
 ]
 
 
+class ReviewScores(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    continuity: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+    character_consistency: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+    world_consistency: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+    plot_logic: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+    prose_quality: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+    pacing: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+    overall: float = Field(
+        ge=0.0,
+        le=100.0,
+    )
+
+
 class ReviewIssue(BaseModel):
 
     model_config = ConfigDict(
         extra="forbid"
     )
+
+    issue_id: str = ""
 
     severity: ReviewSeverity
 
@@ -73,9 +129,107 @@ class ReviewReport(BaseModel):
         min_length=1
     )
 
+    scores: ReviewScores
+
     issues: list[ReviewIssue] = Field(
         default_factory=list
     )
+
+    scores_inferred: bool = False
+
+    scores_normalized: bool = False
+
+
+class TrackedIssue(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    issue_id: str = Field(
+        min_length=1
+    )
+
+    status: TrackedIssueStatus
+
+    first_seen_round: int = Field(
+        ge=1
+    )
+
+    last_seen_round: int = Field(
+        ge=1
+    )
+
+    severity: ReviewSeverity
+
+    category: str
+
+    issue: str
+
+    evidence: str
+
+    impact: str
+
+    recommendation: str
+
+    resolution_note: str = ""
+
+
+class IssueTransition(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    issue_id: str
+
+    round_index: int = Field(
+        ge=1
+    )
+
+    transition: IssueTransitionType
+
+    note: str = ""
+
+
+class RevisionDiffSummary(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    round_index: int = Field(
+        ge=1
+    )
+
+    changed: bool
+
+    before_length: int = Field(
+        ge=0
+    )
+
+    after_length: int = Field(
+        ge=0
+    )
+
+    added_characters: int = Field(
+        ge=0
+    )
+
+    removed_characters: int = Field(
+        ge=0
+    )
+
+    replaced_characters: int = Field(
+        ge=0
+    )
+
+    similarity_ratio: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
+
+    summary: str
 
 
 class WorkflowStep(BaseModel):
@@ -178,6 +332,20 @@ class ChapterWorkflowRequest(BaseModel):
         "none"
     )
 
+    minimum_overall_score: float = Field(
+        default=80.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    minimum_dimension_score: float = Field(
+        default=70.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    require_all_issues_resolved: bool = True
+
     chapter_reasoning_effort: ReasoningEffort = (
         "low"
     )
@@ -256,6 +424,38 @@ class ChapterWorkflowResult(BaseModel):
     review_raw: str = ""
 
     review_raw_history: list[str] = Field(
+        default_factory=list
+    )
+
+    quality_scores: ReviewScores | None = None
+
+    quality_score_history: list[
+        ReviewScores
+    ] = Field(
+        default_factory=list
+    )
+
+    issue_tracker: list[TrackedIssue] = Field(
+        default_factory=list
+    )
+
+    issue_transitions: list[
+        IssueTransition
+    ] = Field(
+        default_factory=list
+    )
+
+    unresolved_issue_ids: list[str] = Field(
+        default_factory=list
+    )
+
+    quality_gate_reasons: list[str] = Field(
+        default_factory=list
+    )
+
+    revision_diffs: list[
+        RevisionDiffSummary
+    ] = Field(
         default_factory=list
     )
 

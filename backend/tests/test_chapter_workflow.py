@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock
 from app.workflows.chapter_workflow import (
     ChapterWorkflow,
 )
+from app.workflows.quality import (
+    build_revision_diff,
+)
 from app.workflows.schemas import (
     ChapterWorkflowRequest,
 )
@@ -45,39 +48,82 @@ def make_result(
     )
 
 
+def issue_payload(
+    *,
+    severity: str = "major",
+    issue_id: str = "",
+    category: str = "continuity",
+    issue: str = "A conflict exists.",
+    evidence: str = "Known memory.",
+    impact: str = "Breaks continuity.",
+    recommendation: str = (
+        "Revise the conflict."
+    ),
+) -> dict:
+
+    return {
+        "issue_id": issue_id,
+        "severity": severity,
+        "category": category,
+        "issue": issue,
+        "evidence": evidence,
+        "impact": impact,
+        "recommendation": recommendation,
+    }
+
+
+def score_payload(
+    score: float,
+) -> dict:
+
+    return {
+        "continuity": score,
+        "character_consistency": score,
+        "world_consistency": score,
+        "plot_logic": score,
+        "prose_quality": score,
+        "pacing": score,
+        "overall": score,
+    }
+
+
 def review_json(
     *,
     approved: bool,
-    severity: str | None = None,
+    issues: list[dict] | None = None,
+    score: float | None = None,
+    include_scores: bool = True,
 ) -> str:
 
-    issues = []
+    if issues is None:
+        issues = []
 
-    if severity is not None:
+    if score is None:
+        score = (
+            90.0
+            if approved
+            else 60.0
+        )
 
-        issues.append(
-            {
-                "severity": severity,
-                "category": "continuity",
-                "issue": "A conflict exists.",
-                "evidence": "Known memory.",
-                "impact": "Breaks continuity.",
-                "recommendation": (
-                    "Revise the conflict."
-                ),
-            }
+    payload = {
+        "approved": approved,
+        "summary": (
+            "Approved."
+            if approved
+            else "Revision required."
+        ),
+        "issues": issues,
+    }
+
+    if include_scores:
+        payload["scores"] = (
+            score_payload(
+                score
+            )
         )
 
     return json.dumps(
-        {
-            "approved": approved,
-            "summary": (
-                "Approved."
-                if approved
-                else "Revision required."
-            ),
-            "issues": issues,
-        }
+        payload
     )
 
 
@@ -148,6 +194,10 @@ class ChapterWorkflowTests(
             1,
         )
         self.assertEqual(
+            result.quality_scores.overall,
+            90.0,
+        )
+        self.assertEqual(
             len(result.workflow_steps),
             2,
         )
@@ -167,7 +217,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
                 make_result(
@@ -231,6 +283,15 @@ class ChapterWorkflowTests(
                 2,
             ],
         )
+        self.assertEqual(
+            len(result.revision_diffs),
+            1,
+        )
+        self.assertTrue(
+            result.revision_diffs[
+                0
+            ].changed
+        )
 
     async def test_two_revision_rounds_can_pass(
         self,
@@ -247,7 +308,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
                 make_result(
@@ -258,7 +321,13 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload(
+                                issue_id=(
+                                    "ISSUE-001"
+                                )
+                            )
+                        ],
                     ),
                 ),
                 make_result(
@@ -305,6 +374,10 @@ class ChapterWorkflowTests(
             result.usage.total_tokens,
             180,
         )
+        self.assertEqual(
+            len(result.revision_diffs),
+            2,
+        )
 
     async def test_max_revision_limit_stops_loop(
         self,
@@ -321,7 +394,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
                 make_result(
@@ -332,7 +407,13 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload(
+                                issue_id=(
+                                    "ISSUE-001"
+                                )
+                            )
+                        ],
                     ),
                 ),
             ]
@@ -381,7 +462,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
             ]
@@ -428,7 +511,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
             ]
@@ -644,7 +729,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
                 make_result(
@@ -692,8 +779,20 @@ class ChapterWorkflowTests(
         review = ChapterWorkflow._parse_review(
             review_json(
                 approved=False,
-                severity="moderate",
+                issues=[
+                    issue_payload()
+                ],
             )
+        )
+
+        from app.workflows.quality import (
+            QualityTracker,
+        )
+
+        tracker = QualityTracker()
+        tracker.apply_review(
+            review,
+            1,
         )
 
         prompt = (
@@ -701,7 +800,9 @@ class ChapterWorkflowTests(
             ._rewrite_instruction(
                 "Draft.",
                 review,
+                tracker.unresolved(),
                 1,
+                self._request(),
             )
         )
 
@@ -729,7 +830,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
                 make_result(
@@ -758,6 +861,15 @@ class ChapterWorkflowTests(
             ],
             "repeated_content",
         )
+        self.assertEqual(
+            len(result.revision_diffs),
+            1,
+        )
+        self.assertFalse(
+            result.revision_diffs[
+                0
+            ].changed
+        )
 
     async def test_previous_revision_cycle_is_stopped(
         self,
@@ -774,7 +886,9 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload()
+                        ],
                     ),
                 ),
                 make_result(
@@ -785,7 +899,13 @@ class ChapterWorkflowTests(
                     agent="review",
                     content=review_json(
                         approved=False,
-                        severity="major",
+                        issues=[
+                            issue_payload(
+                                issue_id=(
+                                    "ISSUE-001"
+                                )
+                            )
+                        ],
                     ),
                 ),
                 make_result(
@@ -838,12 +958,413 @@ class ChapterWorkflowTests(
             report.approved
         )
 
+    def test_missing_scores_are_inferred(
+        self,
+    ) -> None:
+
+        report = ChapterWorkflow._parse_review(
+            review_json(
+                approved=True,
+                include_scores=False,
+            )
+        )
+
+        self.assertTrue(
+            report.scores_inferred
+        )
+        self.assertEqual(
+            report.scores.overall,
+            90.0,
+        )
+
+    def test_ten_point_scores_are_normalized(
+        self,
+    ) -> None:
+
+        payload = {
+            "approved": True,
+            "summary": "Approved.",
+            "scores": score_payload(
+                8.5
+            ),
+            "issues": [],
+        }
+
+        report = ChapterWorkflow._parse_review(
+            json.dumps(
+                payload
+            )
+        )
+
+        self.assertTrue(
+            report.scores_normalized
+        )
+        self.assertEqual(
+            report.scores.overall,
+            85.0,
+        )
+
+    async def test_low_score_triggers_rewrite_without_issues(
+        self,
+    ) -> None:
+
+        manager = SimpleNamespace()
+        manager.execute = AsyncMock(
+            side_effect=[
+                make_result(
+                    agent="chapter",
+                    content="Draft.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=True,
+                        score=65.0,
+                    ),
+                ),
+                make_result(
+                    agent="rewrite",
+                    content="Improved.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=True,
+                        score=90.0,
+                    ),
+                ),
+            ]
+        )
+
+        result = await ChapterWorkflow(
+            manager
+        ).run(
+            self._request()
+        )
+
+        self.assertEqual(
+            result.status,
+            "completed",
+        )
+        self.assertTrue(
+            result.quality_gate_passed
+        )
+        self.assertEqual(
+            result.revision_rounds,
+            1,
+        )
+
+    async def test_issue_id_is_assigned_and_resolved(
+        self,
+    ) -> None:
+
+        manager = SimpleNamespace()
+        manager.execute = AsyncMock(
+            side_effect=[
+                make_result(
+                    agent="chapter",
+                    content="Draft.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=False,
+                        issues=[
+                            issue_payload()
+                        ],
+                    ),
+                ),
+                make_result(
+                    agent="rewrite",
+                    content="Revised.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=True
+                    ),
+                ),
+            ]
+        )
+
+        result = await ChapterWorkflow(
+            manager
+        ).run(
+            self._request()
+        )
+
+        self.assertEqual(
+            result.review_history[
+                0
+            ].issues[0].issue_id,
+            "ISSUE-001",
+        )
+        self.assertEqual(
+            result.issue_tracker[
+                0
+            ].status,
+            "resolved",
+        )
+        self.assertEqual(
+            result.unresolved_issue_ids,
+            [],
+        )
+        self.assertEqual(
+            [
+                item.transition
+                for item
+                in result.issue_transitions
+            ],
+            [
+                "new",
+                "resolved",
+            ],
+        )
+
+    async def test_persisting_issue_reuses_id(
+        self,
+    ) -> None:
+
+        manager = SimpleNamespace()
+        manager.execute = AsyncMock(
+            side_effect=[
+                make_result(
+                    agent="chapter",
+                    content="Draft.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=False,
+                        issues=[
+                            issue_payload()
+                        ],
+                    ),
+                ),
+                make_result(
+                    agent="rewrite",
+                    content="Revised.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=False,
+                        issues=[
+                            issue_payload(
+                                issue_id=(
+                                    "ISSUE-001"
+                                )
+                            )
+                        ],
+                    ),
+                ),
+            ]
+        )
+
+        result = await ChapterWorkflow(
+            manager
+        ).run(
+            self._request(
+                max_revision_rounds=1
+            )
+        )
+
+        self.assertEqual(
+            result.status,
+            "max_revisions_reached",
+        )
+        self.assertEqual(
+            result.unresolved_issue_ids,
+            [
+                "ISSUE-001"
+            ],
+        )
+        self.assertEqual(
+            [
+                item.transition
+                for item
+                in result.issue_transitions
+            ],
+            [
+                "new",
+                "persisting",
+            ],
+        )
+
+    async def test_second_rewrite_receives_only_unresolved_issue(
+        self,
+    ) -> None:
+
+        first_issues = [
+            issue_payload(
+                category="continuity",
+                issue="Conflict A.",
+                recommendation="Fix A.",
+            ),
+            issue_payload(
+                category="pacing",
+                issue="Conflict B.",
+                recommendation="Fix B.",
+            ),
+        ]
+
+        manager = SimpleNamespace()
+        manager.execute = AsyncMock(
+            side_effect=[
+                make_result(
+                    agent="chapter",
+                    content="Draft.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=False,
+                        issues=first_issues,
+                    ),
+                ),
+                make_result(
+                    agent="rewrite",
+                    content="Revision one.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=False,
+                        issues=[
+                            issue_payload(
+                                issue_id=(
+                                    "ISSUE-002"
+                                ),
+                                category="pacing",
+                                issue="Conflict B.",
+                                recommendation=(
+                                    "Fix B."
+                                ),
+                            )
+                        ],
+                    ),
+                ),
+                make_result(
+                    agent="rewrite",
+                    content="Revision two.",
+                ),
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=True
+                    ),
+                ),
+            ]
+        )
+
+        result = await ChapterWorkflow(
+            manager
+        ).run(
+            self._request(
+                max_revision_rounds=2
+            )
+        )
+
+        self.assertEqual(
+            result.status,
+            "completed",
+        )
+
+        second_rewrite_context = (
+            manager.execute
+            .await_args_list[4]
+            .kwargs["context"]
+        )
+
+        self.assertIn(
+            "ISSUE-002",
+            second_rewrite_context.instruction,
+        )
+        self.assertNotIn(
+            "ISSUE-001",
+            second_rewrite_context.instruction,
+        )
+
+    def test_revision_diff_summary(
+        self,
+    ) -> None:
+
+        diff = build_revision_diff(
+            before="abc",
+            after="abXYZ",
+            round_index=1,
+        )
+
+        self.assertTrue(
+            diff.changed
+        )
+        self.assertEqual(
+            diff.before_length,
+            3,
+        )
+        self.assertEqual(
+            diff.after_length,
+            5,
+        )
+        self.assertLess(
+            diff.similarity_ratio,
+            1.0,
+        )
+
+    async def test_dimension_score_reason_is_reported(
+        self,
+    ) -> None:
+
+        payload = {
+            "approved": True,
+            "summary": "Pacing is weak.",
+            "scores": (
+                score_payload(
+                    90.0
+                )
+                | {
+                    "pacing": 60.0,
+                    "overall": 85.0,
+                }
+            ),
+            "issues": [],
+        }
+
+        manager = SimpleNamespace()
+        manager.execute = AsyncMock(
+            side_effect=[
+                make_result(
+                    agent="chapter",
+                    content="Draft.",
+                ),
+                make_result(
+                    agent="review",
+                    content=json.dumps(
+                        payload
+                    ),
+                ),
+            ]
+        )
+
+        result = await ChapterWorkflow(
+            manager
+        ).run(
+            self._request(
+                auto_rewrite=False
+            )
+        )
+
+        self.assertIn(
+            "dimension_score_below_threshold:pacing",
+            result.quality_gate_reasons,
+        )
+
 
 class WorkflowOpenApiTests(
     unittest.TestCase
 ):
 
-    def test_multiround_fields_are_registered(
+    def test_quality_tracking_fields_are_registered(
         self,
     ) -> None:
 
@@ -878,36 +1399,37 @@ class WorkflowOpenApiTests(
             "/api/v1/workflows/chapter",
             paths,
         )
-        self.assertIn(
-            "max_revision_rounds",
-            request_schema[
-                "properties"
-            ],
-        )
-        self.assertIn(
-            "review_retry_attempts",
-            request_schema[
-                "properties"
-            ],
-        )
-        self.assertIn(
-            "review_retry_reasoning_effort",
-            request_schema[
-                "properties"
-            ],
-        )
-        self.assertIn(
-            "review_history",
-            result_schema[
-                "properties"
-            ],
-        )
-        self.assertIn(
-            "revision_rounds",
-            result_schema[
-                "properties"
-            ],
-        )
+
+        for name in [
+            "minimum_overall_score",
+            "minimum_dimension_score",
+            "require_all_issues_resolved",
+        ]:
+
+            self.assertIn(
+                name,
+                request_schema[
+                    "properties"
+                ],
+            )
+
+        for name in [
+            "quality_scores",
+            "quality_score_history",
+            "issue_tracker",
+            "issue_transitions",
+            "unresolved_issue_ids",
+            "quality_gate_reasons",
+            "revision_diffs",
+        ]:
+
+            self.assertIn(
+                name,
+                result_schema[
+                    "properties"
+                ],
+            )
+
         self.assertIn(
             "round_index",
             step_schema[
@@ -920,3 +1442,15 @@ class WorkflowOpenApiTests(
                 "properties"
             ],
         )
+
+        for schema_name in [
+            "ReviewScores",
+            "TrackedIssue",
+            "IssueTransition",
+            "RevisionDiffSummary",
+        ]:
+
+            self.assertIn(
+                schema_name,
+                components,
+            )

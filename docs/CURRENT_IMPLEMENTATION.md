@@ -1448,3 +1448,38 @@ Real Qwen max revision termination passed
 ```
 
 真实验收最终状态为 `max_revisions_reached`：复审仍发现问题且请求只允许 1 轮修订。系统保留最新修订稿，并正确保持 `quality_gate_passed=false`。
+
+## v0.15.0-alpha.4 — Sprint 07D.3 Structured Quality Tracking
+
+章节生产闭环新增结构化质量评分与问题追踪：
+
+```text
+Chapter → Review + Scores + Issue IDs → Rewrite → Re-Review
+```
+
+新增：
+
+- 六维质量评分与总分
+- 0～10 分自动归一化
+- 缺失评分安全推断
+- `minimum_overall_score`
+- `minimum_dimension_score`
+- `require_all_issues_resolved`
+- 稳定 `ISSUE-xxx` 标识
+- `new / persisting / resolved / reopened` 状态迁移
+- 只向 Rewrite 传递未解决问题
+- 每轮修订差异摘要
+- 完整质量门禁原因
+
+验收：
+
+```text
+23/23 targeted workflow tests passed
+64/64 full regression tests passed
+Host-side API and OpenAPI validation passed
+Real Qwen quality score history passed
+Real Qwen issue tracking and transitions passed
+Real Qwen revision diff summary passed
+```
+
+真实验收结果保留一个持续存在的 `ISSUE-001`，因此在一轮修订上限下返回 `max_revisions_reached`，并正确保持 `quality_gate_passed=false`。
