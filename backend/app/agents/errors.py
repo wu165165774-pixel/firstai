@@ -1,0 +1,10 @@
+class AgentError(Exception):
+    """Agent ???????"""
+
+
+class AgentAlreadyRegisteredError(AgentError):
+    """Agent ???????"""
+
+
+class AgentNotFoundError(AgentError):
+    """????? Agent?"""
