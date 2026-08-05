@@ -10,6 +10,7 @@ from app.core.middleware import RequestLogMiddleware
 
 from app.core.exceptions import NovelForgeException
 from app.api.v1.memory import router as memory_router
+from app.api.v1.agents import router as agent_router
 
 from app.core.exception_handler import (
     novelforge_exception_handler
@@ -68,7 +69,7 @@ app = FastAPI(
 
     title=settings.app_name,
     lifespan=lifespan,
-    version="0.13.0",
+    version="0.14.0-alpha.1",
 
 )
 
@@ -122,4 +123,10 @@ app.include_router(
     memory_router,
     prefix="/api/v1",
     tags=["Memory"]
+)
+
+app.include_router(
+    agent_router,
+    prefix="/api/v1",
+    tags=["Agents"]
 )

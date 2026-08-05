@@ -1232,3 +1232,19 @@ MemoryContextBuilder
 ```text
 v0.13.0
 ```
+
+Sprint 07A：NovelAgent Core Framework completed
+Sprint 07B：Agent API and specialized agents completed
+
+Registered agents:
+- novel
+- character
+- world
+- plot
+
+Agent API:
+- GET /api/v1/agents
+- POST /api/v1/agents/{agent_name}/execute
+
+Test status:
+- 24 tests passed
