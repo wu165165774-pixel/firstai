@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import (
     Any,
@@ -13,6 +13,7 @@ from pydantic import (
 
 from app.llm.schemas import (
     ChatMessage,
+    ReasoningEffort,
     TokenUsage,
 )
 
@@ -56,6 +57,8 @@ class AgentContext(BaseModel):
     use_memory: bool = True
 
     task_mode: AgentTaskMode = "auto"
+
+    reasoning_effort: ReasoningEffort = "none"
 
     temperature: float | None = Field(
         default=None,

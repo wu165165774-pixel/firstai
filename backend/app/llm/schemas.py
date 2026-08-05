@@ -3,6 +3,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ChatRole = Literal["system", "user", "assistant", "tool", "developer"]
 
+ReasoningEffort = Literal[
+    "none",
+    "low",
+    "medium",
+    "high",
+]
+
 class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: ChatRole
@@ -39,6 +46,8 @@ class ChatRequest(BaseModel):
         gt=0
     )
 
+
+    reasoning_effort: ReasoningEffort = "none"
 
     stream: bool = False
 

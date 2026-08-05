@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from textwrap import dedent
 
@@ -138,6 +138,7 @@ class NovelAgent(BaseAgent):
             messages=messages,
             temperature=context.temperature,
             max_tokens=context.max_tokens,
+            reasoning_effort=context.reasoning_effort,
             stream=False,
             metadata=request_metadata,
         )
