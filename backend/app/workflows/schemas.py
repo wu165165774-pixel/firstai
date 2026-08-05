@@ -11,9 +11,7 @@ from pydantic import (
     Field,
 )
 
-from app.llm.schemas import (
-    ReasoningEffort,
-)
+from app.llm.schemas import ReasoningEffort
 
 
 ReviewSeverity = Literal[
@@ -29,6 +27,8 @@ WorkflowStatus = Literal[
     "review_failed",
     "review_parse_failed",
     "rewrite_failed",
+    "stagnation_detected",
+    "max_revisions_reached",
 ]
 
 
@@ -89,6 +89,16 @@ class WorkflowStep(BaseModel):
         "review",
         "rewrite",
     ]
+
+    round_index: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    attempt_index: int = Field(
+        default=1,
+        ge=1,
+    )
 
     agent: str
 
@@ -151,6 +161,22 @@ class ChapterWorkflowRequest(BaseModel):
     use_memory: bool = True
 
     auto_rewrite: bool = True
+
+    max_revision_rounds: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+    )
+
+    review_retry_attempts: int = Field(
+        default=1,
+        ge=0,
+        le=2,
+    )
+
+    review_retry_reasoning_effort: ReasoningEffort = (
+        "none"
+    )
 
     chapter_reasoning_effort: ReasoningEffort = (
         "low"
@@ -223,11 +249,21 @@ class ChapterWorkflowResult(BaseModel):
 
     review_report: ReviewReport | None = None
 
+    review_history: list[ReviewReport] = Field(
+        default_factory=list
+    )
+
     review_raw: str = ""
+
+    review_raw_history: list[str] = Field(
+        default_factory=list
+    )
 
     final_content: str = ""
 
     revision_applied: bool = False
+
+    revision_rounds: int = 0
 
     quality_gate_passed: bool = False
 

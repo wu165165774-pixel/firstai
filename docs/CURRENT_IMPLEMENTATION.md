@@ -1425,3 +1425,26 @@ Real Qwen three-stage rewrite branch passed
 ```
 
 说明：Sprint 07D.1 不在 Rewrite 后执行第二次 Review，因此改写分支的 `quality_gate_passed` 保持为 `false`。复审闭环将在 Sprint 07D.2 实现。
+
+## v0.15.0-alpha.3 — Sprint 07D.2 Multi-Round Chapter Quality Loop
+
+章节生产工作流已升级为：
+
+```text
+Chapter → Review → Rewrite → Re-Review
+```
+
+新增最大修订轮次、复审历史、步骤轮次和尝试编号、正文循环保护、Review 自动降级重试，以及严格的最终质量门禁语义。
+
+验收：
+
+```text
+15/15 targeted workflow tests passed
+56/56 full regression tests passed
+OpenAPI multiround fields passed
+OpenAPI review retry fields passed
+Real Qwen draft-review-rewrite-review loop passed
+Real Qwen max revision termination passed
+```
+
+真实验收最终状态为 `max_revisions_reached`：复审仍发现问题且请求只允许 1 轮修订。系统保留最新修订稿，并正确保持 `quality_gate_passed=false`。

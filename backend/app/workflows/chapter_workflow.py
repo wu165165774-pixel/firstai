@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 from json import (
@@ -21,9 +22,7 @@ from app.workflows.schemas import (
 )
 
 
-class ReviewOutputParseError(
-    ValueError
-):
+class ReviewOutputParseError(ValueError):
     """
     Raised when ReviewAgent output cannot
     be converted into ReviewReport.
@@ -32,7 +31,7 @@ class ReviewOutputParseError(
 
 class ChapterWorkflow:
     """
-    Generate, review, and optionally rewrite
+    Generate, review, rewrite, and re-review
     a complete novel chapter.
     """
 
@@ -78,7 +77,9 @@ class ChapterWorkflow:
     def _step_from_result(
         cls,
         stage: str,
+        round_index: int,
         result: Any,
+        attempt_index: int = 1,
     ) -> WorkflowStep:
 
         usage = getattr(
@@ -95,6 +96,8 @@ class ChapterWorkflow:
 
         return WorkflowStep(
             stage=stage,
+            round_index=round_index,
+            attempt_index=attempt_index,
             agent=str(
                 getattr(
                     result,
@@ -188,6 +191,19 @@ class ChapterWorkflow:
         )
 
     @staticmethod
+    def _content_fingerprint(
+        content: str,
+    ) -> str:
+
+        normalized = " ".join(
+            content.split()
+        )
+
+        return hashlib.sha256(
+            normalized.encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
     def _extract_json_object(
         content: str,
     ) -> dict[str, Any]:
@@ -250,7 +266,8 @@ class ChapterWorkflow:
 
     @staticmethod
     def _review_instruction(
-        draft: str,
+        content: str,
+        round_index: int,
     ) -> str:
 
         return (
@@ -279,16 +296,18 @@ class ChapterWorkflow:
             "substantive correction. Do not invent "
             "missing canon to explain a conflict. "
             "Unsupported facts must be marked as "
-            "unconfirmed.\n\n"
+            "unconfirmed.\n"
+            f"This is review round {round_index}.\n\n"
             "CHAPTER_BEGIN\n"
-            + draft
+            + content
             + "\nCHAPTER_END"
         )
 
     @staticmethod
     def _rewrite_instruction(
-        draft: str,
+        content: str,
         review: ReviewReport,
+        round_index: int,
     ) -> str:
 
         review_json = json.dumps(
@@ -308,13 +327,19 @@ class ChapterWorkflow:
             "unsupported statements.\n"
             "4. Preserve the intended scene, style, "
             "point of view, and event outcome.\n"
-            "5. Output only the complete revised "
-            "chapter.\n\n"
+            "5. Implement at least one concrete textual "
+            "change that addresses the review report.\n"
+            "6. Do not return the source text unchanged. "
+            "The revised output must differ from the "
+            "input while preserving confirmed facts.\n"
+            "7. Output only the complete revised "
+            "chapter.\n"
+            f"8. This is revision round {round_index}.\n\n"
             "REVIEW_REPORT_BEGIN\n"
             + review_json
             + "\nREVIEW_REPORT_END\n\n"
             "DRAFT_BEGIN\n"
-            + draft
+            + content
             + "\nDRAFT_END"
         )
 
@@ -342,9 +367,11 @@ class ChapterWorkflow:
         *,
         instruction: str,
         stage: str,
+        round_index: int,
         reasoning_effort: str,
         temperature: float,
         max_tokens: int,
+        attempt_index: int = 1,
     ) -> AgentContext:
 
         metadata = dict(
@@ -357,6 +384,12 @@ class ChapterWorkflow:
                     "chapter_production"
                 ),
                 "workflow_stage": stage,
+                "workflow_round": (
+                    round_index
+                ),
+                "workflow_attempt": (
+                    attempt_index
+                ),
             }
         )
 
@@ -380,12 +413,208 @@ class ChapterWorkflow:
             }
         )
 
+    async def _execute_review_with_retry(
+        self,
+        request: ChapterWorkflowRequest,
+        current_content: str,
+        review_round: int,
+    ) -> tuple[
+        list[WorkflowStep],
+        WorkflowStep | None,
+        str | None,
+    ]:
+
+        attempt_steps: list[
+            WorkflowStep
+        ] = []
+
+        last_error: str | None = None
+
+        total_attempts = (
+            1
+            + request.review_retry_attempts
+        )
+
+        for attempt_index in range(
+            1,
+            total_attempts + 1,
+        ):
+
+            is_retry = attempt_index > 1
+
+            reasoning_effort = (
+                request
+                .review_retry_reasoning_effort
+                if is_retry
+                else request
+                .review_reasoning_effort
+            )
+
+            max_tokens = (
+                max(
+                    request.review_max_tokens,
+                    1200,
+                )
+                if is_retry
+                else request.review_max_tokens
+            )
+
+            try:
+
+                review_result = (
+                    await self
+                    ._agent_manager
+                    .execute(
+                        agent_name="review",
+                        context=self._context(
+                            request,
+                            instruction=(
+                                self
+                                ._review_instruction(
+                                    current_content,
+                                    review_round,
+                                )
+                            ),
+                            stage="review",
+                            round_index=(
+                                review_round
+                            ),
+                            reasoning_effort=(
+                                reasoning_effort
+                            ),
+                            temperature=(
+                                request
+                                .review_temperature
+                            ),
+                            max_tokens=max_tokens,
+                            attempt_index=(
+                                attempt_index
+                            ),
+                        ),
+                    )
+                )
+
+            except Exception as exc:
+
+                last_error = str(exc)
+                continue
+
+            review_step = (
+                self._step_from_result(
+                    "review",
+                    review_round,
+                    review_result,
+                    attempt_index,
+                )
+            )
+
+            review_step.metadata.update(
+                {
+                    "review_attempt_index": (
+                        attempt_index
+                    ),
+                    "review_retry_count": (
+                        attempt_index - 1
+                    ),
+                    "review_fallback_used": (
+                        is_retry
+                    ),
+                    "effective_reasoning_effort": (
+                        reasoning_effort
+                    ),
+                    "effective_max_tokens": (
+                        max_tokens
+                    ),
+                }
+            )
+
+            attempt_steps.append(
+                review_step
+            )
+
+            if (
+                review_step.success
+                and review_step.content.strip()
+            ):
+
+                return (
+                    attempt_steps,
+                    review_step,
+                    None,
+                )
+
+            last_error = (
+                "ReviewAgent returned an empty "
+                "or unsuccessful result."
+            )
+
+        return (
+            attempt_steps,
+            None,
+            last_error,
+        )
+
+    @staticmethod
+    def _result(
+        *,
+        status: str,
+        draft: str,
+        current_content: str,
+        steps: list[WorkflowStep],
+        review_history: list[ReviewReport],
+        review_raw_history: list[str],
+        revision_rounds: int,
+        quality_gate_passed: bool,
+        metadata: dict[str, Any],
+    ) -> ChapterWorkflowResult:
+
+        latest_review = (
+            review_history[-1]
+            if review_history
+            else None
+        )
+
+        latest_raw = (
+            review_raw_history[-1]
+            if review_raw_history
+            else ""
+        )
+
+        return ChapterWorkflowResult(
+            status=status,
+            draft=draft,
+            review_report=latest_review,
+            review_history=review_history,
+            review_raw=latest_raw,
+            review_raw_history=(
+                review_raw_history
+            ),
+            final_content=current_content,
+            revision_applied=(
+                revision_rounds > 0
+            ),
+            revision_rounds=revision_rounds,
+            quality_gate_passed=(
+                quality_gate_passed
+            ),
+            workflow_steps=steps,
+            usage=ChapterWorkflow._aggregate_usage(
+                steps
+            ),
+            metadata=metadata,
+        )
+
     async def run(
         self,
         request: ChapterWorkflowRequest,
     ) -> ChapterWorkflowResult:
 
         steps: list[WorkflowStep] = []
+        review_history: list[
+            ReviewReport
+        ] = []
+        review_raw_history: list[str] = []
+        revision_rounds = 0
 
         try:
 
@@ -400,6 +629,7 @@ class ChapterWorkflow:
                             request.instruction
                         ),
                         stage="draft",
+                        round_index=0,
                         reasoning_effort=(
                             request
                             .chapter_reasoning_effort
@@ -418,16 +648,29 @@ class ChapterWorkflow:
 
         except Exception as exc:
 
-            return ChapterWorkflowResult(
+            return self._result(
                 status="draft_failed",
+                draft="",
+                current_content="",
+                steps=steps,
+                review_history=review_history,
+                review_raw_history=(
+                    review_raw_history
+                ),
+                revision_rounds=0,
+                quality_gate_passed=False,
                 metadata={
                     "error": str(exc),
                     "failed_stage": "draft",
+                    "termination_reason": (
+                        "draft_exception"
+                    ),
                 },
             )
 
         draft_step = self._step_from_result(
             "draft",
+            0,
             draft_result,
         )
 
@@ -436,277 +679,427 @@ class ChapterWorkflow:
         )
 
         draft = draft_step.content
+        current_content = draft
 
         if (
             not draft_step.success
             or not draft.strip()
         ):
 
-            return ChapterWorkflowResult(
+            return self._result(
                 status="draft_failed",
                 draft=draft,
-                final_content=draft,
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
+                current_content=draft,
+                steps=steps,
+                review_history=review_history,
+                review_raw_history=(
+                    review_raw_history
                 ),
+                revision_rounds=0,
+                quality_gate_passed=False,
                 metadata={
                     "failed_stage": "draft",
+                    "termination_reason": (
+                        "empty_or_failed_draft"
+                    ),
                 },
             )
 
-        try:
+        seen_fingerprints = {
+            self._content_fingerprint(
+                current_content
+            )
+        }
 
-            review_result = (
-                await self
-                ._agent_manager
-                .execute(
-                    agent_name="review",
-                    context=self._context(
-                        request,
-                        instruction=(
-                            self
-                            ._review_instruction(
-                                draft
-                            )
-                        ),
-                        stage="review",
-                        reasoning_effort=(
-                            request
-                            .review_reasoning_effort
-                        ),
-                        temperature=(
-                            request
-                            .review_temperature
-                        ),
-                        max_tokens=(
-                            request
-                            .review_max_tokens
-                        ),
+        review_round = 1
+
+        while True:
+
+            (
+                review_attempt_steps,
+                review_step,
+                review_error,
+            ) = await self._execute_review_with_retry(
+                request,
+                current_content,
+                review_round,
+            )
+
+            steps.extend(
+                review_attempt_steps
+            )
+
+            if review_step is None:
+
+                return self._result(
+                    status="review_failed",
+                    draft=draft,
+                    current_content=(
+                        current_content
                     ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=False,
+                    metadata={
+                        "error": review_error,
+                        "failed_stage": "review",
+                        "failed_round": (
+                            review_round
+                        ),
+                        "review_attempts": (
+                            1
+                            + request
+                            .review_retry_attempts
+                        ),
+                        "termination_reason": (
+                            "review_retries_exhausted"
+                        ),
+                    },
+                )
+
+            review_raw = review_step.content
+
+            review_raw_history.append(
+                review_raw
+            )
+
+            try:
+
+                review_report = (
+                    self._parse_review(
+                        review_raw
+                    )
+                )
+
+            except ReviewOutputParseError as exc:
+
+                return self._result(
+                    status=(
+                        "review_parse_failed"
+                    ),
+                    draft=draft,
+                    current_content=(
+                        current_content
+                    ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=False,
+                    metadata={
+                        "error": str(exc),
+                        "failed_stage": (
+                            "review_parse"
+                        ),
+                        "failed_round": (
+                            review_round
+                        ),
+                        "termination_reason": (
+                            "review_parse_failed"
+                        ),
+                    },
+                )
+
+            review_history.append(
+                review_report
+            )
+
+            requires_revision = (
+                self._requires_revision(
+                    review_report,
+                    request
+                    .rewrite_on_severities,
                 )
             )
 
-        except Exception as exc:
+            if not requires_revision:
 
-            return ChapterWorkflowResult(
-                status="review_failed",
-                draft=draft,
-                final_content=draft,
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
-                ),
-                metadata={
-                    "error": str(exc),
-                    "failed_stage": "review",
-                },
-            )
-
-        review_step = self._step_from_result(
-            "review",
-            review_result,
-        )
-
-        steps.append(
-            review_step
-        )
-
-        review_raw = review_step.content
-
-        if (
-            not review_step.success
-            or not review_raw.strip()
-        ):
-
-            return ChapterWorkflowResult(
-                status="review_failed",
-                draft=draft,
-                review_raw=review_raw,
-                final_content=draft,
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
-                ),
-                metadata={
-                    "failed_stage": "review",
-                },
-            )
-
-        try:
-
-            review_report = (
-                self._parse_review(
-                    review_raw
+                return self._result(
+                    status="completed",
+                    draft=draft,
+                    current_content=(
+                        current_content
+                    ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=True,
+                    metadata={
+                        "auto_rewrite": (
+                            request.auto_rewrite
+                        ),
+                        "revision_required": (
+                            False
+                        ),
+                        "review_parse_success": (
+                            True
+                        ),
+                        "termination_reason": (
+                            "quality_gate_passed"
+                        ),
+                        "final_review_round": (
+                            review_round
+                        ),
+                    },
                 )
-            )
 
-        except ReviewOutputParseError as exc:
+            if not request.auto_rewrite:
 
-            return ChapterWorkflowResult(
-                status="review_parse_failed",
-                draft=draft,
-                review_raw=review_raw,
-                final_content=draft,
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
-                ),
-                metadata={
-                    "error": str(exc),
-                    "failed_stage": (
-                        "review_parse"
+                return self._result(
+                    status="completed",
+                    draft=draft,
+                    current_content=(
+                        current_content
                     ),
-                },
-            )
-
-        requires_revision = (
-            self._requires_revision(
-                review_report,
-                request.rewrite_on_severities,
-            )
-        )
-
-        if (
-            not requires_revision
-            or not request.auto_rewrite
-        ):
-
-            return ChapterWorkflowResult(
-                status="completed",
-                draft=draft,
-                review_report=review_report,
-                review_raw=review_raw,
-                final_content=draft,
-                revision_applied=False,
-                quality_gate_passed=(
-                    not requires_revision
-                ),
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
-                ),
-                metadata={
-                    "auto_rewrite": (
-                        request.auto_rewrite
+                    steps=steps,
+                    review_history=(
+                        review_history
                     ),
-                    "revision_required": (
-                        requires_revision
+                    review_raw_history=(
+                        review_raw_history
                     ),
-                    "review_parse_success": (
-                        True
+                    revision_rounds=(
+                        revision_rounds
                     ),
-                },
-            )
-
-        try:
-
-            rewrite_result = (
-                await self
-                ._agent_manager
-                .execute(
-                    agent_name="rewrite",
-                    context=self._context(
-                        request,
-                        instruction=(
-                            self
-                            ._rewrite_instruction(
-                                draft,
-                                review_report,
-                            )
+                    quality_gate_passed=False,
+                    metadata={
+                        "auto_rewrite": False,
+                        "revision_required": True,
+                        "review_parse_success": (
+                            True
                         ),
-                        stage="rewrite",
-                        reasoning_effort=(
-                            request
-                            .rewrite_reasoning_effort
+                        "termination_reason": (
+                            "auto_rewrite_disabled"
                         ),
-                        temperature=(
-                            request
-                            .rewrite_temperature
-                        ),
-                        max_tokens=(
-                            request
-                            .rewrite_max_tokens
-                        ),
-                    ),
+                    },
                 )
-            )
 
-        except Exception as exc:
-
-            return ChapterWorkflowResult(
-                status="rewrite_failed",
-                draft=draft,
-                review_report=review_report,
-                review_raw=review_raw,
-                final_content=draft,
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
-                ),
-                metadata={
-                    "error": str(exc),
-                    "failed_stage": "rewrite",
-                    "review_parse_success": (
-                        True
-                    ),
-                },
-            )
-
-        rewrite_step = self._step_from_result(
-            "rewrite",
-            rewrite_result,
-        )
-
-        steps.append(
-            rewrite_step
-        )
-
-        final_content = (
-            rewrite_step.content
             if (
-                rewrite_step.success
-                and rewrite_step.content.strip()
-            )
-            else draft
-        )
+                revision_rounds
+                >= request.max_revision_rounds
+            ):
 
-        if final_content == draft:
-
-            return ChapterWorkflowResult(
-                status="rewrite_failed",
-                draft=draft,
-                review_report=review_report,
-                review_raw=review_raw,
-                final_content=draft,
-                workflow_steps=steps,
-                usage=self._aggregate_usage(
-                    steps
-                ),
-                metadata={
-                    "failed_stage": "rewrite",
-                    "review_parse_success": (
-                        True
+                return self._result(
+                    status=(
+                        "max_revisions_reached"
                     ),
-                },
+                    draft=draft,
+                    current_content=(
+                        current_content
+                    ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=False,
+                    metadata={
+                        "auto_rewrite": True,
+                        "revision_required": True,
+                        "review_parse_success": (
+                            True
+                        ),
+                        "termination_reason": (
+                            "max_revisions_reached"
+                        ),
+                        "max_revision_rounds": (
+                            request
+                            .max_revision_rounds
+                        ),
+                    },
+                )
+
+            next_revision_round = (
+                revision_rounds + 1
             )
 
-        return ChapterWorkflowResult(
-            status="completed",
-            draft=draft,
-            review_report=review_report,
-            review_raw=review_raw,
-            final_content=final_content,
-            revision_applied=True,
-            quality_gate_passed=False,
-            workflow_steps=steps,
-            usage=self._aggregate_usage(
-                steps
-            ),
-            metadata={
-                "auto_rewrite": True,
-                "revision_required": True,
-                "review_parse_success": True,
-                "post_rewrite_review": False,
-            },
-        )
+            try:
+
+                rewrite_result = (
+                    await self
+                    ._agent_manager
+                    .execute(
+                        agent_name="rewrite",
+                        context=self._context(
+                            request,
+                            instruction=(
+                                self
+                                ._rewrite_instruction(
+                                    current_content,
+                                    review_report,
+                                    next_revision_round,
+                                )
+                            ),
+                            stage="rewrite",
+                            round_index=(
+                                next_revision_round
+                            ),
+                            reasoning_effort=(
+                                request
+                                .rewrite_reasoning_effort
+                            ),
+                            temperature=(
+                                request
+                                .rewrite_temperature
+                            ),
+                            max_tokens=(
+                                request
+                                .rewrite_max_tokens
+                            ),
+                        ),
+                    )
+                )
+
+            except Exception as exc:
+
+                return self._result(
+                    status="rewrite_failed",
+                    draft=draft,
+                    current_content=(
+                        current_content
+                    ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=False,
+                    metadata={
+                        "error": str(exc),
+                        "failed_stage": "rewrite",
+                        "failed_round": (
+                            next_revision_round
+                        ),
+                        "termination_reason": (
+                            "rewrite_exception"
+                        ),
+                    },
+                )
+
+            rewrite_step = (
+                self._step_from_result(
+                    "rewrite",
+                    next_revision_round,
+                    rewrite_result,
+                )
+            )
+
+            steps.append(
+                rewrite_step
+            )
+
+            revised_content = (
+                rewrite_step.content
+            )
+
+            if (
+                not rewrite_step.success
+                or not revised_content.strip()
+            ):
+
+                return self._result(
+                    status="rewrite_failed",
+                    draft=draft,
+                    current_content=(
+                        current_content
+                    ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=False,
+                    metadata={
+                        "failed_stage": "rewrite",
+                        "failed_round": (
+                            next_revision_round
+                        ),
+                        "termination_reason": (
+                            "empty_or_failed_rewrite"
+                        ),
+                    },
+                )
+
+            fingerprint = (
+                self._content_fingerprint(
+                    revised_content
+                )
+            )
+
+            if fingerprint in seen_fingerprints:
+
+                return self._result(
+                    status=(
+                        "stagnation_detected"
+                    ),
+                    draft=draft,
+                    current_content=(
+                        current_content
+                    ),
+                    steps=steps,
+                    review_history=(
+                        review_history
+                    ),
+                    review_raw_history=(
+                        review_raw_history
+                    ),
+                    revision_rounds=(
+                        revision_rounds
+                    ),
+                    quality_gate_passed=False,
+                    metadata={
+                        "failed_stage": "rewrite",
+                        "failed_round": (
+                            next_revision_round
+                        ),
+                        "termination_reason": (
+                            "repeated_content"
+                        ),
+                    },
+                )
+
+            seen_fingerprints.add(
+                fingerprint
+            )
+
+            current_content = revised_content
+            revision_rounds = (
+                next_revision_round
+            )
+            review_round += 1
