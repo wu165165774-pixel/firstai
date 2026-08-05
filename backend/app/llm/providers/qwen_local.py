@@ -50,6 +50,10 @@ class QwenLocalProvider(BaseChatProvider):
         response = await self.client.chat.completions.create(
 
             model=request.model or self.model,
+
+            extra_body={
+                "reasoning_effort": "none",
+            },
             messages=[
             
                 {
@@ -124,6 +128,10 @@ class QwenLocalProvider(BaseChatProvider):
         stream = await self.client.chat.completions.create(
 
             model=request.model or self.model,
+
+            extra_body={
+                "reasoning_effort": "none",
+            },
 
             messages=[
             

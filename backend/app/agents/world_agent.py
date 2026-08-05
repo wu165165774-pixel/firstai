@@ -1,9 +1,11 @@
 ﻿from textwrap import dedent
 
-from app.agents.novel_agent import NovelAgent
+from app.agents.specialized_agent import (
+    SpecializedAgent,
+)
 
 
-class WorldAgent(NovelAgent):
+class WorldAgent(SpecializedAgent):
     """
     世界观设定与世界规则一致性 Agent。
     """
@@ -20,6 +22,24 @@ class WorldAgent(NovelAgent):
             "负责世界观、地点、势力、历史、制度、"
             "力量体系以及世界规则一致性。"
         )
+
+    @property
+    def memory_types(
+        self,
+    ) -> frozenset[str]:
+
+        return frozenset(
+            {
+                "world",
+            }
+        )
+
+    @property
+    def grounding_label(
+        self,
+    ) -> str:
+
+        return "世界观设定"
 
     @staticmethod
     def _system_prompt() -> str:

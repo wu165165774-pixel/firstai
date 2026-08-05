@@ -1,9 +1,11 @@
-﻿from textwrap import dedent
+from textwrap import dedent
 
-from app.agents.novel_agent import NovelAgent
+from app.agents.specialized_agent import (
+    SpecializedAgent,
+)
 
 
-class PlotAgent(NovelAgent):
+class PlotAgent(SpecializedAgent):
     """
     剧情规划与剧情一致性 Agent。
     """
@@ -20,6 +22,24 @@ class PlotAgent(NovelAgent):
             "负责剧情规划、事件因果、冲突设计、"
             "伏笔安排以及剧情一致性检查。"
         )
+
+    @property
+    def memory_types(
+        self,
+    ) -> frozenset[str]:
+
+        return frozenset(
+            {
+                "plot",
+            }
+        )
+
+    @property
+    def grounding_label(
+        self,
+    ) -> str:
+
+        return "剧情设定"
 
     @staticmethod
     def _system_prompt() -> str:

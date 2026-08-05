@@ -1,6 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from typing import Any
+from typing import (
+    Any,
+    Literal,
+)
 
 from pydantic import (
     BaseModel,
@@ -14,9 +17,16 @@ from app.llm.schemas import (
 )
 
 
+AgentTaskMode = Literal[
+    "auto",
+    "grounded",
+    "creative",
+]
+
+
 class AgentContext(BaseModel):
     """
-    Agent ???????????
+    Agent 单次执行所需的上下文。
     """
 
     model_config = ConfigDict(
@@ -45,6 +55,8 @@ class AgentContext(BaseModel):
 
     use_memory: bool = True
 
+    task_mode: AgentTaskMode = "auto"
+
     temperature: float | None = Field(
         default=None,
         ge=0.0,
@@ -63,7 +75,7 @@ class AgentContext(BaseModel):
 
 class AgentResult(BaseModel):
     """
-    Agent ?????
+    Agent 执行结果。
     """
 
     model_config = ConfigDict(

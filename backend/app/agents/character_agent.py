@@ -1,9 +1,11 @@
 ﻿from textwrap import dedent
 
-from app.agents.novel_agent import NovelAgent
+from app.agents.specialized_agent import (
+    SpecializedAgent,
+)
 
 
-class CharacterAgent(NovelAgent):
+class CharacterAgent(SpecializedAgent):
     """
     人物设定与人物一致性 Agent。
     """
@@ -20,6 +22,25 @@ class CharacterAgent(NovelAgent):
             "负责人物设定、人物关系、人物行为逻辑"
             "以及人物一致性检查。"
         )
+
+    @property
+    def memory_types(
+        self,
+    ) -> frozenset[str]:
+
+        return frozenset(
+            {
+                "character",
+                "short_term",
+            }
+        )
+
+    @property
+    def grounding_label(
+        self,
+    ) -> str:
+
+        return "人物设定"
 
     @staticmethod
     def _system_prompt() -> str:

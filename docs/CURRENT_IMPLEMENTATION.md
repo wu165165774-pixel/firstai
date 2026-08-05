@@ -1248,3 +1248,46 @@ Agent API:
 
 Test status:
 - 24 tests passed
+
+
+
+## Sprint 07B.1：Agent Grounding Hardening
+
+状态：Completed
+
+版本：v0.14.0-alpha.2
+
+新增能力：
+
+* Agent `auto / grounded / creative` 任务模式
+* 专业 Agent 确定性事实回答
+* Hybrid Semantic Retrieval
+* SQLite 类型全量扫描
+* HybridMemoryResult `memory_id` 兼容
+* 单一事实证据收缩
+* Agent Grounding Evidence
+* 专业 Agent 事实型幻觉防护
+* Grounded 模式不调用 LLM
+* Creative 模式调用本地 Qwen
+* Qwen Thinking 默认关闭，防止正文输出为空
+
+当前专业 Agent：
+
+* novel
+* character
+* world
+* plot
+
+测试状态：
+
+* Agent tests：22 passed
+* Memory/RAG tests：8 passed
+* Total：30 passed
+
+端到端状态：
+
+* Character Grounded：Passed
+* World Grounded：Passed
+* Plot Grounded：Passed
+* World Creative：Passed
+
