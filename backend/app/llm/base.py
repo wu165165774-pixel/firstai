@@ -2,7 +2,9 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from .schemas import ChatRequest, ChatResponse
 
+
 class BaseChatProvider(ABC):
+
     name: str
 
     @abstractmethod
@@ -10,7 +12,10 @@ class BaseChatProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def stream_chat(self, request: ChatRequest) -> AsyncIterator[str]:
+    async def stream_chat(
+        self,
+        request: ChatRequest
+    ) -> AsyncIterator[str]:
         raise NotImplementedError
 
     @abstractmethod

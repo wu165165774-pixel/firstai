@@ -5,12 +5,18 @@ description = "AI Novel Writing Engine Backend"
 requires-python = ">=3.12"
 
 dependencies = [
-    "fastapi>=0.116.0",
-    "uvicorn[standard]>=0.35.0",
-    "pydantic>=2.11.0",
-    "pydantic-settings>=2.10.0",
-    "python-dotenv>=1.1.0",
-    "loguru>=0.7.3"
+    "fastapi>=0.116.0,<1.0.0",
+    "uvicorn[standard]>=0.35.0,<1.0.0",
+    "pydantic>=2.11.0,<3.0.0",
+    "pydantic-settings>=2.10.0,<3.0.0",
+    "python-dotenv>=1.1.0,<2.0.0",
+    "loguru>=0.7.3,<1.0.0",
+
+    "httpx>=0.28.1,<1.0.0",
+    "openai>=1.0.0,<3.0.0",
+
+    "numpy>=1.26.4,<3.0.0",
+    "faiss-cpu==1.15.0"
 ]
 
 
@@ -19,3 +25,8 @@ requires = [
     "setuptools>=68"
 ]
 build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

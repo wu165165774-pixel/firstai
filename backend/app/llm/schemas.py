@@ -12,13 +12,40 @@ class ChatMessage(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 class ChatRequest(BaseModel):
+
     model_config = ConfigDict(extra="forbid")
-    messages: list[ChatMessage] = Field(min_length=1)
+
+
+    provider: str = "qwen_local"
+
+
+    messages: list[ChatMessage] = Field(
+        min_length=1
+    )
+
+
     model: str | None = None
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(default=None, gt=0)
+
+
+    temperature: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=2.0
+    )
+
+
+    max_tokens: int | None = Field(
+        default=None,
+        gt=0
+    )
+
+
     stream: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict
+    )
 
 class TokenUsage(BaseModel):
     prompt_tokens: int = 0

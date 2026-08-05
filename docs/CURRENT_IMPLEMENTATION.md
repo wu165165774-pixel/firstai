@@ -1,0 +1,1234 @@
+# NovelForge 当前实现状态
+
+## 1. 文档信息
+
+* 项目名称：NovelForge
+* 当前开发分支：master
+* 当前代码版本：v0.13.0-alpha.1
+* 文档状态：当前实现快照
+* 快照日期：2026-08-05
+* 当前阶段：长期记忆与 Vector RAG 基础能力已实现，混合检索整合进行中
+
+本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
+
+本文档不是最终架构文档，也不表示原规划中的所有 Sprint 均已按顺序完成。后续开发过程中，将继续补充缺失模块、自动化测试、Sprint 文档和正式版本验收。
+
+---
+
+## 2. 当前整体架构
+
+当前系统主要由以下组件组成：
+
+```text
+用户请求
+    ↓
+FastAPI Chat API
+    ↓
+LLM Manager
+    ↓
+Provider Registry
+    ├── DeepSeek Provider
+    └── Qwen Local Provider
+            ↓
+        Ollama
+            ↓
+        qwen3:8b
+```
+
+长期记忆处理链路：
+
+```text
+用户聊天输入
+    ↓
+Qwen 生成聊天回复
+    ↓
+FastAPI BackgroundTasks
+    ↓
+LLM Memory Extractor
+    ↓
+结构化记忆分类
+    ├── character
+    ├── world
+    ├── plot
+    └── short_term
+    ↓
+Memory Manager
+    ↓
+SQLite 持久化
+    ↓
+去重、hit_count、importance、score 更新
+    ↓
+Embedding
+    ↓
+FAISS 持久化索引
+```
+
+---
+
+## 3. 已实现功能
+
+### 3.1 Backend 基础框架
+
+已实现：
+
+* FastAPI 应用
+* Uvicorn 服务
+* Docker 部署
+* Docker Compose 编排
+* 健康检查接口
+* Swagger/OpenAPI 文档
+* 请求中间件
+* 请求 ID
+* 请求耗时日志
+* 统一项目配置
+* 统一响应结构
+* 基础异常处理
+
+当前端口：
+
+```text
+宿主机端口：18080
+容器端口：8000
+```
+
+---
+
+### 3.2 LLM Provider 框架
+
+已实现：
+
+* Base LLM Provider
+* Provider Registry
+* LLM Manager
+* ChatRequest
+* ChatMessage
+* Provider 动态选择
+* Model 动态选择
+* 统一聊天调用入口
+
+当前已注册 Provider：
+
+```text
+deepseek
+qwen_local
+```
+
+DeepSeek Provider 框架已经存在，但尚未使用真实 DeepSeek API Key 完成正式验收。
+
+---
+
+### 3.3 本地 Qwen 部署
+
+已实现：
+
+* Ollama Docker 服务
+* Backend 与 Ollama 容器通信
+* qwen3:8b 本地模型
+* OpenAI-compatible Chat API
+* Qwen Local Provider
+* GPU 推理
+* 模型列表查询
+* 聊天接口调用
+
+硬件环境：
+
+```text
+GPU：NVIDIA GeForce RTX 4070 SUPER
+显存：12 GB
+CUDA：12.7
+```
+
+当前模型：
+
+```text
+qwen3:8b
+qwen3-embedding:0.6b
+```
+
+---
+
+### 3.4 长期记忆数据模型
+
+已实现记忆字段：
+
+```text
+id
+user_id
+novel_id
+memory_type
+content
+importance
+hit_count
+score
+created_at
+updated_at
+last_accessed_at
+metadata
+```
+
+记忆类型：
+
+```text
+character
+world
+plot
+short_term
+```
+
+---
+
+### 3.5 SQLite 记忆存储
+
+已实现：
+
+* SQLite 初始化
+* memories 表自动创建
+* 记忆新增
+* 记忆查询
+* 按用户和小说隔离
+* metadata JSON 存储
+* 时间字段维护
+* 动态 score 计算
+* 查询结果排序
+* 容器重启后数据持久化
+
+SQLite 数据文件：
+
+```text
+/app/data/memory.db
+```
+
+---
+
+### 3.6 LLM 结构化记忆抽取
+
+已实现：
+
+* 后台异步记忆抽取
+* 使用 Qwen 分析用户输入
+* 只抽取用户明确提供的信息
+* 返回结构化 JSON
+* 自动判断 memory_type
+* 自动计算 importance
+* 一句话拆分为多条原子事实
+* 无意义输入返回空数组
+* JSON 清理与解析保护
+* 非法 memory_type 过滤
+* LLM 请求异常保护
+
+验证示例：
+
+输入：
+
+```text
+林凡性格谨慎，是青云宗的外门弟子。青云宗位于东荒大陆。
+```
+
+抽取结果：
+
+```text
+character：林凡性格谨慎。
+character：林凡是青云宗的外门弟子。
+world：青云宗位于东荒大陆。
+```
+
+输入：
+
+```text
+请继续。
+```
+
+抽取结果：
+
+```json
+[]
+```
+
+---
+
+### 3.7 记忆去重与评分
+
+已实现：
+
+* 相同内容精确去重
+* 重复记忆不产生新记录
+* hit_count 自动增加
+* updated_at 自动更新
+* last_accessed_at 自动更新
+* importance 合并
+* score 动态计算
+* 查询结果按 score 排序
+
+已验证重复输入后：
+
+```text
+记录数量仍为 1
+hit_count 从 1 增加到 2
+score 重新计算
+updated_at 更新
+```
+
+---
+
+### 3.8 长期记忆上下文注入
+
+已实现：
+
+* 从用户请求提取 user_id
+* 从用户请求提取 novel_id
+* 提取最后一条用户消息
+* 查询相关记忆
+* 按 character、world、plot 和 other 分类
+* 生成系统提示词
+* 将长期记忆插入聊天 messages
+* 要求模型禁止编造未记录设定
+
+当前上下文注入仍主要依赖现有 Memory Retriever。
+
+FAISS 语义检索尚未完全接入正式聊天链路。
+
+---
+
+### 3.9 Embedding
+
+已实现：
+
+* Ollama Embedding API
+* qwen3-embedding:0.6b
+* 批量文本 Embedding
+* 1024 维向量
+* float32 转换
+* 向量归一化
+* 空输入检查
+* 维度检查
+* NaN 和 Infinity 检查
+* HTTP 异常处理
+
+语义验证结果：
+
+```text
+林凡性格谨慎。
+林凡做事小心，从不轻易冒险。
+相似度：0.8963
+```
+
+与无关世界设定的相似度：
+
+```text
+青云宗位于东荒大陆。
+相似度：0.2758
+```
+
+语义区分测试通过。
+
+---
+
+### 3.10 FAISS 向量存储
+
+已实现：
+
+* FAISS IndexFlatIP
+* FAISS IndexIDMap2
+* 余弦相似度搜索
+* memory_id 到 vector_id 映射
+* 稳定 vector_id 生成
+* 向量新增
+* 向量更新
+* 向量删除基础能力
+* 索引全量重建
+* 索引搜索
+* 索引统计
+* 索引文件持久化
+* JSON ID 映射持久化
+* 容器重启后自动加载
+
+持久化文件：
+
+```text
+/app/data/vector_db/memory.index
+/app/data/vector_db/memory_ids.json
+```
+
+---
+
+### 3.11 SQLite 与 FAISS 同步
+
+已实现：
+
+* 从 SQLite 全量重建 FAISS
+* SQLite memory ID 与 FAISS vector ID 映射
+* 新增记忆后自动生成 Embedding
+* 新增记忆后自动写入 FAISS
+* 去重更新后自动执行 FAISS upsert
+* FAISS 失败不影响 SQLite 主存储
+* 可通过 rebuild 恢复向量索引
+
+当前已验证 SQLite 和 FAISS 记录数量一致。
+
+---
+
+### 3.12 FAISS 语义搜索
+
+已实现独立语义搜索。
+
+验证问题：
+
+```text
+谁做事很小心，不愿意轻易冒险？
+```
+
+第一名结果：
+
+```text
+林凡性格谨慎。
+```
+
+相似度：
+
+```text
+0.6419
+```
+
+说明语义搜索能够召回文本表述不同但含义相近的记忆。
+
+---
+
+## 4. 当前主要代码目录
+
+```text
+backend/app/
+├── api/
+│   └── v1/
+├── config/
+├── core/
+├── llm/
+│   ├── bootstrap.py
+│   ├── base.py
+│   ├── manager.py
+│   ├── registry.py
+│   ├── schemas.py
+│   └── providers/
+├── memory/
+│   ├── context.py
+│   ├── extractor.py
+│   ├── manager.py
+│   ├── retriever.py
+│   ├── schemas.py
+│   ├── score.py
+│   └── storage/
+└── rag/
+    ├── embedding.py
+    ├── faiss_store.py
+    └── memory_indexer.py
+```
+
+---
+
+## 5. 当前依赖
+
+主要运行依赖：
+
+```text
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+python-dotenv
+loguru
+httpx
+openai
+numpy
+faiss-cpu
+```
+
+当前已验证：
+
+```text
+openai：2.53.0
+httpx：0.28.1
+numpy：2.5.1
+faiss：1.15.0
+```
+
+依赖完整性检查：
+
+```text
+No broken requirements found.
+```
+
+---
+
+## 6. 当前未完成功能
+
+### 6.1 Vector RAG 正式检索链路
+
+待实现：
+
+* FAISS 搜索结果批量读取 SQLite
+* user_id 隔离
+* novel_id 隔离
+* 无效 memory_id 清理
+* similarity 过滤
+* similarity 与 SQLite score 混合评分
+* importance 权重
+* hit_count 权重
+* 时间衰减
+* 最终 top-k 排序
+* 接入 MemoryContextBuilder
+* 接入正式 Chat API
+
+---
+
+### 6.2 索引一致性
+
+待完善：
+
+* 删除 SQLite 记忆时同步删除 FAISS
+* 修改记忆内容时更新向量
+* 应用启动时自动检查一致性
+* SQLite 与 FAISS 数量不一致时自动重建
+* 索引文件损坏恢复
+* 模型或向量维度变化后的版本迁移
+
+---
+
+### 6.3 自动化测试
+
+待补充：
+
+* LLM Registry 测试
+* Qwen Provider 测试
+* SQLite Storage 测试
+* Memory Manager 测试
+* 记忆去重测试
+* Memory Extractor 测试
+* Embedding 测试
+* FAISS Store 测试
+* Memory Indexer 测试
+* Chat API 集成测试
+* 容器重启持久化测试
+
+---
+
+### 6.4 尚未完成的原规划模块
+
+待后续继续实现：
+
+* OpenAI Provider
+* Claude Provider
+* DashScope/Qwen API Provider
+* DeepSeek API 正式验收
+* Session Memory
+* Working Memory
+* Novel Agent
+* LangGraph 工作流
+* Prompt Manager
+* Plot RAG
+* External Knowledge RAG
+* Temporal Graph RAG
+* 世界观知识图谱
+* 人物关系图谱
+* Planner
+* Consistency Engine
+* Chapter Generator
+* Rewrite Agent
+* Review Agent
+* Frontend
+* 项目管理界面
+* 插件机制
+* 完整 v1.0 发布
+
+---
+
+## 7. 当前版本说明
+
+当前版本：
+
+```text
+v0.13.0-alpha.1
+```
+
+该版本表示：
+
+* 本地 Qwen 聊天能力已实现；
+* 长期记忆核心链路已实现；
+* LLM 结构化记忆提取已实现；
+* SQLite 记忆持久化已实现；
+* 精确去重和动态评分已实现；
+* Ollama Embedding 已实现；
+* FAISS 持久化向量索引已实现；
+* SQLite 与 FAISS 自动同步已实现；
+* 独立语义搜索已验证；
+* 正式混合检索链路尚未完成。
+
+该版本不是正式的 Sprint 13 完成版本，也不是生产版本。
+
+---
+
+## 8. 后续开发原则
+
+从该快照之后继续开发时，应恢复以下工程要求：
+
+1. 每个功能模块必须有明确范围。
+2. 每个阶段必须有运行验证。
+3. 每个阶段必须有自动化测试。
+4. 每个正式 Sprint 必须有完整文档。
+5. 每个稳定阶段必须提交 Git。
+6. 每个正式里程碑必须打版本标签。
+7. 不允许把数据库、日志、模型文件和向量索引提交到 Git。
+8. 正式版本发布前必须确保工作区干净。
+9. 任何架构调整必须同步更新文档。
+10. 每个 Sprint 完成后必须提供验收清单。
+
+---
+
+## 9. 下一步
+
+当前下一项开发任务：
+
+```text
+完成 FAISS 与 SQLite 混合检索
+```
+
+目标链路：
+
+```text
+用户问题
+    ↓
+Qwen Embedding
+    ↓
+FAISS 语义召回
+    ↓
+按 user_id 和 novel_id 过滤
+    ↓
+SQLite 获取完整记忆
+    ↓
+similarity + importance + hit_count + score 综合排序
+    ↓
+MemoryContextBuilder
+    ↓
+注入 Qwen Chat 上下文
+```
+
+完成该功能并补齐自动化测试后，再评估是否发布：
+
+```text
+v0.13.0
+```
+# NovelForge 当前实现状态
+
+## 1. 文档信息
+
+* 项目名称：NovelForge
+* 当前开发分支：master
+* 当前代码版本：v0.13.0-alpha.1
+* 文档状态：当前实现快照
+* 快照日期：2026-08-05
+* 当前阶段：长期记忆与 Vector RAG 基础能力已实现，混合检索整合进行中
+
+本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
+
+本文档不是最终架构文档，也不表示原规划中的所有 Sprint 均已按顺序完成。后续开发过程中，将继续补充缺失模块、自动化测试、Sprint 文档和正式版本验收。
+
+---
+
+## 2. 当前整体架构
+
+当前系统主要由以下组件组成：
+
+```text
+用户请求
+    ↓
+FastAPI Chat API
+    ↓
+LLM Manager
+    ↓
+Provider Registry
+    ├── DeepSeek Provider
+    └── Qwen Local Provider
+            ↓
+        Ollama
+            ↓
+        qwen3:8b
+```
+
+长期记忆处理链路：
+
+```text
+用户聊天输入
+    ↓
+Qwen 生成聊天回复
+    ↓
+FastAPI BackgroundTasks
+    ↓
+LLM Memory Extractor
+    ↓
+结构化记忆分类
+    ├── character
+    ├── world
+    ├── plot
+    └── short_term
+    ↓
+Memory Manager
+    ↓
+SQLite 持久化
+    ↓
+去重、hit_count、importance、score 更新
+    ↓
+Embedding
+    ↓
+FAISS 持久化索引
+```
+
+---
+
+## 3. 已实现功能
+
+### 3.1 Backend 基础框架
+
+已实现：
+
+* FastAPI 应用
+* Uvicorn 服务
+* Docker 部署
+* Docker Compose 编排
+* 健康检查接口
+* Swagger/OpenAPI 文档
+* 请求中间件
+* 请求 ID
+* 请求耗时日志
+* 统一项目配置
+* 统一响应结构
+* 基础异常处理
+
+当前端口：
+
+```text
+宿主机端口：18080
+容器端口：8000
+```
+
+---
+
+### 3.2 LLM Provider 框架
+
+已实现：
+
+* Base LLM Provider
+* Provider Registry
+* LLM Manager
+* ChatRequest
+* ChatMessage
+* Provider 动态选择
+* Model 动态选择
+* 统一聊天调用入口
+
+当前已注册 Provider：
+
+```text
+deepseek
+qwen_local
+```
+
+DeepSeek Provider 框架已经存在，但尚未使用真实 DeepSeek API Key 完成正式验收。
+
+---
+
+### 3.3 本地 Qwen 部署
+
+已实现：
+
+* Ollama Docker 服务
+* Backend 与 Ollama 容器通信
+* qwen3:8b 本地模型
+* OpenAI-compatible Chat API
+* Qwen Local Provider
+* GPU 推理
+* 模型列表查询
+* 聊天接口调用
+
+硬件环境：
+
+```text
+GPU：NVIDIA GeForce RTX 4070 SUPER
+显存：12 GB
+CUDA：12.7
+```
+
+当前模型：
+
+```text
+qwen3:8b
+qwen3-embedding:0.6b
+```
+
+---
+
+### 3.4 长期记忆数据模型
+
+已实现记忆字段：
+
+```text
+id
+user_id
+novel_id
+memory_type
+content
+importance
+hit_count
+score
+created_at
+updated_at
+last_accessed_at
+metadata
+```
+
+记忆类型：
+
+```text
+character
+world
+plot
+short_term
+```
+
+---
+
+### 3.5 SQLite 记忆存储
+
+已实现：
+
+* SQLite 初始化
+* memories 表自动创建
+* 记忆新增
+* 记忆查询
+* 按用户和小说隔离
+* metadata JSON 存储
+* 时间字段维护
+* 动态 score 计算
+* 查询结果排序
+* 容器重启后数据持久化
+
+SQLite 数据文件：
+
+```text
+/app/data/memory.db
+```
+
+---
+
+### 3.6 LLM 结构化记忆抽取
+
+已实现：
+
+* 后台异步记忆抽取
+* 使用 Qwen 分析用户输入
+* 只抽取用户明确提供的信息
+* 返回结构化 JSON
+* 自动判断 memory_type
+* 自动计算 importance
+* 一句话拆分为多条原子事实
+* 无意义输入返回空数组
+* JSON 清理与解析保护
+* 非法 memory_type 过滤
+* LLM 请求异常保护
+
+验证示例：
+
+输入：
+
+```text
+林凡性格谨慎，是青云宗的外门弟子。青云宗位于东荒大陆。
+```
+
+抽取结果：
+
+```text
+character：林凡性格谨慎。
+character：林凡是青云宗的外门弟子。
+world：青云宗位于东荒大陆。
+```
+
+输入：
+
+```text
+请继续。
+```
+
+抽取结果：
+
+```json
+[]
+```
+
+---
+
+### 3.7 记忆去重与评分
+
+已实现：
+
+* 相同内容精确去重
+* 重复记忆不产生新记录
+* hit_count 自动增加
+* updated_at 自动更新
+* last_accessed_at 自动更新
+* importance 合并
+* score 动态计算
+* 查询结果按 score 排序
+
+已验证重复输入后：
+
+```text
+记录数量仍为 1
+hit_count 从 1 增加到 2
+score 重新计算
+updated_at 更新
+```
+
+---
+
+### 3.8 长期记忆上下文注入
+
+已实现：
+
+* 从用户请求提取 user_id
+* 从用户请求提取 novel_id
+* 提取最后一条用户消息
+* 查询相关记忆
+* 按 character、world、plot 和 other 分类
+* 生成系统提示词
+* 将长期记忆插入聊天 messages
+* 要求模型禁止编造未记录设定
+
+当前上下文注入仍主要依赖现有 Memory Retriever。
+
+FAISS 语义检索尚未完全接入正式聊天链路。
+
+---
+
+### 3.9 Embedding
+
+已实现：
+
+* Ollama Embedding API
+* qwen3-embedding:0.6b
+* 批量文本 Embedding
+* 1024 维向量
+* float32 转换
+* 向量归一化
+* 空输入检查
+* 维度检查
+* NaN 和 Infinity 检查
+* HTTP 异常处理
+
+语义验证结果：
+
+```text
+林凡性格谨慎。
+林凡做事小心，从不轻易冒险。
+相似度：0.8963
+```
+
+与无关世界设定的相似度：
+
+```text
+青云宗位于东荒大陆。
+相似度：0.2758
+```
+
+语义区分测试通过。
+
+---
+
+### 3.10 FAISS 向量存储
+
+已实现：
+
+* FAISS IndexFlatIP
+* FAISS IndexIDMap2
+* 余弦相似度搜索
+* memory_id 到 vector_id 映射
+* 稳定 vector_id 生成
+* 向量新增
+* 向量更新
+* 向量删除基础能力
+* 索引全量重建
+* 索引搜索
+* 索引统计
+* 索引文件持久化
+* JSON ID 映射持久化
+* 容器重启后自动加载
+
+持久化文件：
+
+```text
+/app/data/vector_db/memory.index
+/app/data/vector_db/memory_ids.json
+```
+
+---
+
+### 3.11 SQLite 与 FAISS 同步
+
+已实现：
+
+* 从 SQLite 全量重建 FAISS
+* SQLite memory ID 与 FAISS vector ID 映射
+* 新增记忆后自动生成 Embedding
+* 新增记忆后自动写入 FAISS
+* 去重更新后自动执行 FAISS upsert
+* FAISS 失败不影响 SQLite 主存储
+* 可通过 rebuild 恢复向量索引
+
+当前已验证 SQLite 和 FAISS 记录数量一致。
+
+---
+
+### 3.12 FAISS 语义搜索
+
+已实现独立语义搜索。
+
+验证问题：
+
+```text
+谁做事很小心，不愿意轻易冒险？
+```
+
+第一名结果：
+
+```text
+林凡性格谨慎。
+```
+
+相似度：
+
+```text
+0.6419
+```
+
+说明语义搜索能够召回文本表述不同但含义相近的记忆。
+
+---
+
+## 4. 当前主要代码目录
+
+```text
+backend/app/
+├── api/
+│   └── v1/
+├── config/
+├── core/
+├── llm/
+│   ├── bootstrap.py
+│   ├── base.py
+│   ├── manager.py
+│   ├── registry.py
+│   ├── schemas.py
+│   └── providers/
+├── memory/
+│   ├── context.py
+│   ├── extractor.py
+│   ├── manager.py
+│   ├── retriever.py
+│   ├── schemas.py
+│   ├── score.py
+│   └── storage/
+└── rag/
+    ├── embedding.py
+    ├── faiss_store.py
+    └── memory_indexer.py
+```
+
+---
+
+## 5. 当前依赖
+
+主要运行依赖：
+
+```text
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+python-dotenv
+loguru
+httpx
+openai
+numpy
+faiss-cpu
+```
+
+当前已验证：
+
+```text
+openai：2.53.0
+httpx：0.28.1
+numpy：2.5.1
+faiss：1.15.0
+```
+
+依赖完整性检查：
+
+```text
+No broken requirements found.
+```
+
+---
+
+## 6. 当前未完成功能
+
+### 6.1 Vector RAG 正式检索链路
+
+待实现：
+
+* FAISS 搜索结果批量读取 SQLite
+* user_id 隔离
+* novel_id 隔离
+* 无效 memory_id 清理
+* similarity 过滤
+* similarity 与 SQLite score 混合评分
+* importance 权重
+* hit_count 权重
+* 时间衰减
+* 最终 top-k 排序
+* 接入 MemoryContextBuilder
+* 接入正式 Chat API
+
+---
+
+### 6.2 索引一致性
+
+待完善：
+
+* 删除 SQLite 记忆时同步删除 FAISS
+* 修改记忆内容时更新向量
+* 应用启动时自动检查一致性
+* SQLite 与 FAISS 数量不一致时自动重建
+* 索引文件损坏恢复
+* 模型或向量维度变化后的版本迁移
+
+---
+
+### 6.3 自动化测试
+
+待补充：
+
+* LLM Registry 测试
+* Qwen Provider 测试
+* SQLite Storage 测试
+* Memory Manager 测试
+* 记忆去重测试
+* Memory Extractor 测试
+* Embedding 测试
+* FAISS Store 测试
+* Memory Indexer 测试
+* Chat API 集成测试
+* 容器重启持久化测试
+
+---
+
+### 6.4 尚未完成的原规划模块
+
+待后续继续实现：
+
+* OpenAI Provider
+* Claude Provider
+* DashScope/Qwen API Provider
+* DeepSeek API 正式验收
+* Session Memory
+* Working Memory
+* Novel Agent
+* LangGraph 工作流
+* Prompt Manager
+* Plot RAG
+* External Knowledge RAG
+* Temporal Graph RAG
+* 世界观知识图谱
+* 人物关系图谱
+* Planner
+* Consistency Engine
+* Chapter Generator
+* Rewrite Agent
+* Review Agent
+* Frontend
+* 项目管理界面
+* 插件机制
+* 完整 v1.0 发布
+
+---
+
+## 7. 当前版本说明
+
+当前版本：
+
+```text
+v0.13.0-alpha.1
+```
+
+该版本表示：
+
+* 本地 Qwen 聊天能力已实现；
+* 长期记忆核心链路已实现；
+* LLM 结构化记忆提取已实现；
+* SQLite 记忆持久化已实现；
+* 精确去重和动态评分已实现；
+* Ollama Embedding 已实现；
+* FAISS 持久化向量索引已实现；
+* SQLite 与 FAISS 自动同步已实现；
+* 独立语义搜索已验证；
+* 正式混合检索链路尚未完成。
+
+该版本不是正式的 Sprint 13 完成版本，也不是生产版本。
+
+---
+
+## 8. 后续开发原则
+
+从该快照之后继续开发时，应恢复以下工程要求：
+
+1. 每个功能模块必须有明确范围。
+2. 每个阶段必须有运行验证。
+3. 每个阶段必须有自动化测试。
+4. 每个正式 Sprint 必须有完整文档。
+5. 每个稳定阶段必须提交 Git。
+6. 每个正式里程碑必须打版本标签。
+7. 不允许把数据库、日志、模型文件和向量索引提交到 Git。
+8. 正式版本发布前必须确保工作区干净。
+9. 任何架构调整必须同步更新文档。
+10. 每个 Sprint 完成后必须提供验收清单。
+
+---
+
+## 9. 下一步
+
+当前下一项开发任务：
+
+```text
+完成 FAISS 与 SQLite 混合检索
+```
+
+目标链路：
+
+```text
+用户问题
+    ↓
+Qwen Embedding
+    ↓
+FAISS 语义召回
+    ↓
+按 user_id 和 novel_id 过滤
+    ↓
+SQLite 获取完整记忆
+    ↓
+similarity + importance + hit_count + score 综合排序
+    ↓
+MemoryContextBuilder
+    ↓
+注入 Qwen Chat 上下文
+```
+
+完成该功能并补齐自动化测试后，再评估是否发布：
+
+```text
+v0.13.0
+```
