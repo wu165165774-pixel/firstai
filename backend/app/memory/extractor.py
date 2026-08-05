@@ -11,7 +11,6 @@ from app.llm.schemas import ChatMessage, ChatRequest
 from app.memory.manager import memory_manager
 from app.memory.schemas import MemoryItem, MemoryType
 
-from app.rag.memory_indexer import memory_indexer
 
 EXTRACTION_SYSTEM_PROMPT = """
 你是 NovelForge 的长期记忆提取器。
@@ -396,23 +395,22 @@ class MemoryExtractor:
                 #
                 # FAISS 失败不能影响 SQLite 主存储，
                 # 因此单独捕获异常。索引可以后续通过 rebuild 恢复。
-                try:
-                
-                    await memory_indexer.upsert_memory(
-                        saved
-                    )
 
-                    logger.info(
-                        "MemoryExtractor indexed: "
-                        f"memory_id={saved.id}"
-                    )
-
-                except Exception:
+                saved = await memory_manager.add_memory(
+                    memory
+                )
                 
-                    logger.exception(
-                        "MemoryExtractor FAISS indexing failed: "
-                        f"memory_id={saved.id}"
-                    )
+                saved_memories.append(
+                    saved
+                )
+                
+                logger.info(
+                    "MemoryExtractor saved: "
+                    f"id={saved.id}, "
+                    f"type={saved.memory_type}, "
+                    f"importance={saved.importance}, "
+                    f"content={saved.content!r}"
+                )
 
 
 
