@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-
-
+from contextlib import asynccontextmanager
+from loguru import logger
 from app.config.settings import settings
 
 from app.api.health import router as health_router
@@ -15,12 +15,59 @@ from app.core.exception_handler import (
     novelforge_exception_handler
 )
 
+from app.rag.consistency import (
+    memory_index_consistency_service,
+)
 
+@asynccontextmanager
+async def lifespan(
+    app: FastAPI,
+):
+    """
+    NovelForge 应用生命周期。
+
+    启动时检查 SQLite 与 FAISS 索引一致性。
+    修复失败不会阻止 Backend 启动，SQLite 仍作为主存储。
+    """
+
+    try:
+
+        result = (
+            await memory_index_consistency_service
+            .check_and_repair()
+        )
+
+        if result.consistent:
+
+            logger.info(
+                "Memory index startup check complete: "
+                f"sqlite_count={result.sqlite_count}, "
+                f"faiss_count={result.faiss_count_after}, "
+                f"rebuilt={result.rebuilt}"
+            )
+
+        else:
+
+            logger.error(
+                "Memory index startup check failed: "
+                f"sqlite_count={result.sqlite_count}, "
+                f"faiss_count={result.faiss_count_after}, "
+                f"error={result.error}"
+            )
+
+    except Exception:
+
+        logger.exception(
+            "Unexpected memory index startup check failure. "
+            "Backend will continue using SQLite."
+        )
+
+    yield
 
 app = FastAPI(
 
     title=settings.app_name,
-
+    lifespan=lifespan,
     version="0.2.0"
 
 )

@@ -70,7 +70,23 @@ class PersistentFaissStore:
 
         self._id_to_memory: dict[str, str] = {}
 
-        self._load()
+        try:
+
+            self._load()
+
+        except Exception:
+
+            logger.exception(
+                "FAISS index load failed. "
+                "An empty index will be used and rebuilt "
+                "from SQLite during application startup."
+            )
+
+            self._index = (
+                self._create_empty_index()
+            )
+
+            self._id_to_memory = {}
 
     def _create_empty_index(
         self,
@@ -628,7 +644,18 @@ class PersistentFaissStore:
             self._id_to_memory = {}
 
             self._save_locked()
+    def list_memory_ids(
+        self,
+    ) -> list[str]:
+        """
+        返回当前 FAISS 索引中映射的全部 memory_id。
+        """
 
+        with self._lock:
+
+            return list(
+                self._id_to_memory.values()
+            )
     def stats(
         self,
     ) -> dict[str, Any]:
