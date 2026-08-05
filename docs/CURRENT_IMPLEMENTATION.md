@@ -1395,3 +1395,33 @@ Test status:
 * ReviewAgent：Passed
 * Seven Agent Registry：Passed
 
+## v0.15.0-alpha.2 — Sprint 07D.1 Chapter Production Workflow
+
+已实现章节生产工作流：
+
+```text
+ChapterAgent → ReviewAgent → Quality Gate → RewriteAgent
+```
+
+新增：
+
+- `POST /api/v1/workflows/chapter`
+- 结构化 Review JSON
+- 可配置严重等级门禁
+- 自动改写开关
+- 三个阶段独立推理等级、温度和 Token 上限
+- 工作流步骤、Token 和延迟聚合
+- 安全失败状态和原始正文保留
+- 6 条工作流测试
+
+验收状态：
+
+```text
+47/47 tests passed
+OpenAPI workflow route passed
+External port 18080 passed
+Real Qwen two-stage branch passed
+Real Qwen three-stage rewrite branch passed
+```
+
+说明：Sprint 07D.1 不在 Rewrite 后执行第二次 Review，因此改写分支的 `quality_gate_passed` 保持为 `false`。复审闭环将在 Sprint 07D.2 实现。

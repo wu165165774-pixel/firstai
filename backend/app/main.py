@@ -10,6 +10,7 @@ from app.api.v1.agents import router as agent_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.providers import router as provider_router
+from app.api.v1.workflows import router as workflow_router
 from app.config.settings import settings
 from app.core.exception_handler import novelforge_exception_handler
 from app.core.exceptions import NovelForgeException
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.1",
+    version="0.15.0-alpha.2",
     lifespan=lifespan,
 )
 
@@ -89,4 +90,10 @@ app.include_router(
     agent_router,
     prefix="/api/v1",
     tags=["Agents"],
+)
+
+app.include_router(
+    workflow_router,
+    prefix="/api/v1",
+    tags=["Workflows"],
 )
