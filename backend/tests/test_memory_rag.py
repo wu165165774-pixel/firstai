@@ -457,7 +457,95 @@ class MemoryManagerSyncTests(
         self.assertIsNone(
             result
         )
+        
+class MemoryManagerRetrieveTests(
+    unittest.IsolatedAsyncioTestCase
+):
 
+    async def test_retrieve_memory_uses_hybrid_retriever(
+        self,
+    ) -> None:
+
+        storage = SimpleNamespace(
+            delete=AsyncMock(),
+            find_duplicate=AsyncMock(),
+            save=AsyncMock(),
+            update=AsyncMock(),
+            query=AsyncMock(),
+        )
+
+        manager = MemoryManager.__new__(
+            MemoryManager
+        )
+
+        manager.storage = {
+            "sqlite": storage,
+        }
+
+        hybrid_result = SimpleNamespace(
+            memory_id="m1",
+            user_id="user001",
+            novel_id="novel001",
+            memory_type="character",
+            content="林凡性格谨慎。",
+            importance=0.8,
+            hit_count=2,
+            base_score=1.0,
+            similarity=0.82,
+            hybrid_score=0.79,
+        )
+
+        mocked_retrieve = AsyncMock(
+            return_value=[
+                hybrid_result
+            ]
+        )
+
+        with patch.object(
+            manager_module.hybrid_memory_retriever,
+            "retrieve",
+            new=mocked_retrieve,
+        ):
+
+            results = await manager.retrieve_memory(
+                user_id="user001",
+                novel_id="novel001",
+                query="谁做事很谨慎？",
+                top_k=5,
+            )
+
+        mocked_retrieve.assert_awaited_once_with(
+            user_id="user001",
+            novel_id="novel001",
+            query="谁做事很谨慎？",
+            top_k=5,
+            min_similarity=0.35,
+        )
+
+        self.assertEqual(
+            len(results),
+            1,
+        )
+
+        self.assertEqual(
+            results[0]["id"],
+            "m1",
+        )
+
+        self.assertEqual(
+            results[0]["content"],
+            "林凡性格谨慎。",
+        )
+
+        self.assertEqual(
+            results[0]["similarity"],
+            0.82,
+        )
+
+        self.assertEqual(
+            results[0]["hybrid_score"],
+            0.79,
+        )
 
 class MemoryIndexConsistencyTests(
     unittest.IsolatedAsyncioTestCase
@@ -643,3 +731,84 @@ if __name__ == "__main__":
     unittest.main(
         verbosity=2
     )
+
+    async def test_retrieve_memory_uses_hybrid_retriever(
+        self,
+    ) -> None:
+
+        storage = SimpleNamespace(
+            delete=AsyncMock(),
+            find_duplicate=AsyncMock(),
+            save=AsyncMock(),
+            update=AsyncMock(),
+            query=AsyncMock(),
+        )
+
+        manager = self.create_manager(
+            storage
+        )
+
+        hybrid_result = SimpleNamespace(
+            memory_id="m1",
+            user_id="user001",
+            novel_id="novel001",
+            memory_type="character",
+            content="林凡性格谨慎。",
+            importance=0.8,
+            hit_count=2,
+            base_score=1.0,
+            similarity=0.82,
+            hybrid_score=0.79,
+        )
+
+        mocked_retrieve = AsyncMock(
+            return_value=[
+                hybrid_result
+            ]
+        )
+
+        with patch.object(
+            manager_module.hybrid_memory_retriever,
+            "retrieve",
+            new=mocked_retrieve,
+        ):
+
+            results = await manager.retrieve_memory(
+                user_id="user001",
+                novel_id="novel001",
+                query="谁做事很谨慎？",
+                top_k=5,
+            )
+
+        mocked_retrieve.assert_awaited_once_with(
+            user_id="user001",
+            novel_id="novel001",
+            query="谁做事很谨慎？",
+            top_k=5,
+            min_similarity=0.35,
+        )
+
+        self.assertEqual(
+            len(results),
+            1,
+        )
+
+        self.assertEqual(
+            results[0]["id"],
+            "m1",
+        )
+
+        self.assertEqual(
+            results[0]["content"],
+            "林凡性格谨慎。",
+        )
+
+        self.assertEqual(
+            results[0]["similarity"],
+            0.82,
+        )
+
+        self.assertEqual(
+            results[0]["hybrid_score"],
+            0.79,
+        )
