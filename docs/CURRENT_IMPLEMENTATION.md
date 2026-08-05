@@ -1291,3 +1291,107 @@ Test status:
 * Plot Grounded：Passed
 * World Creative：Passed
 
+
+## Sprint 07C.2：高级小说专业 Agent
+
+状态：Completed
+
+版本：v0.15.0-alpha.1
+
+新增 Agent：
+
+* ChapterAgent
+* RewriteAgent
+* ReviewAgent
+
+当前 Agent Registry：
+
+* chapter
+* character
+* novel
+* plot
+* review
+* rewrite
+* world
+
+新增能力：
+
+* 完整章节生成
+* 小说文本改写、润色、扩写和缩写
+* 人物一致性审查
+* 世界观一致性审查
+* 剧情因果和时间线审查
+* 文本节奏、对话和表达质量审查
+* 专业 Agent 执行 Metadata
+* 专业 Agent 推荐 Reasoning 强度
+* ReviewAgent 未确认设定防幻觉约束
+
+推荐 Reasoning：
+
+* ChapterAgent：low
+* RewriteAgent：none
+* ReviewAgent：medium
+
+测试状态：
+
+* Advanced Agent tests：7 passed
+* Total：41 passed
+
+端到端状态：
+
+* ChapterAgent：Passed
+* RewriteAgent：Passed
+* ReviewAgent：Passed
+* Seven Agent Registry：Passed
+## Sprint 07C.2：高级小说专业 Agent
+
+状态：Completed
+
+版本：v0.15.0-alpha.1
+
+新增 Agent：
+
+* ChapterAgent
+* RewriteAgent
+* ReviewAgent
+
+当前 Agent Registry：
+
+* chapter
+* character
+* novel
+* plot
+* review
+* rewrite
+* world
+
+新增能力：
+
+* 完整章节生成
+* 小说文本改写、润色、扩写和缩写
+* 人物一致性审查
+* 世界观一致性审查
+* 剧情因果和时间线审查
+* 文本节奏、对话和表达质量审查
+* 专业 Agent 执行 Metadata
+* 专业 Agent 推荐 Reasoning 强度
+* ReviewAgent 未确认设定防幻觉约束
+
+推荐 Reasoning：
+
+* ChapterAgent：low
+* RewriteAgent：none
+* ReviewAgent：medium
+
+测试状态：
+
+* Advanced Agent tests：7 passed
+* Total：41 passed
+
+端到端状态：
+
+* ChapterAgent：Passed
+* RewriteAgent：Passed
+* ReviewAgent：Passed
+* Seven Agent Registry：Passed
+

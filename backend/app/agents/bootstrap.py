@@ -1,56 +1,91 @@
-﻿from app.agents.character_agent import CharacterAgent
-from app.agents.manager import AgentManager
-from app.agents.novel_agent import NovelAgent
-from app.agents.plot_agent import PlotAgent
-from app.agents.registry import AgentRegistry
-from app.agents.world_agent import WorldAgent
-from app.llm.bootstrap import llm_manager
-from app.llm.manager import LLMManager
+from __future__ import annotations
+
+from app.agents.character_agent import (
+    CharacterAgent,
+)
+from app.agents.chapter_agent import (
+    ChapterAgent,
+)
+from app.agents.manager import (
+    AgentManager,
+)
+from app.agents.novel_agent import (
+    NovelAgent,
+)
+from app.agents.plot_agent import (
+    PlotAgent,
+)
+from app.agents.registry import (
+    AgentRegistry,
+)
+from app.agents.review_agent import (
+    ReviewAgent,
+)
+from app.agents.rewrite_agent import (
+    RewriteAgent,
+)
+from app.agents.world_agent import (
+    WorldAgent,
+)
+from app.llm.bootstrap import (
+    llm_manager,
+)
 
 
-def create_agent_manager(
-    llm_manager_instance: LLMManager,
-) -> AgentManager:
+def create_agent_registry(
+    llm_manager_instance,
+) -> AgentRegistry:
     """
-    创建 NovelForge AgentManager。
-
-    使用依赖注入创建 Agent 注册表和执行管理器，
-    便于测试以及后续扩展更多专业 Agent。
+    Create and populate the NovelForge
+    agent registry.
     """
 
     registry = AgentRegistry()
 
-    registry.register(
-        NovelAgent(
-            llm_manager=llm_manager_instance
-        )
+    agent_classes = (
+        CharacterAgent,
+        ChapterAgent,
+        NovelAgent,
+        PlotAgent,
+        ReviewAgent,
+        RewriteAgent,
+        WorldAgent,
     )
 
-    registry.register(
-        CharacterAgent(
-            llm_manager=llm_manager_instance
-        )
-    )
+    for agent_class in agent_classes:
 
-    registry.register(
-        WorldAgent(
-            llm_manager=llm_manager_instance
+        registry.register(
+            agent_class(
+                llm_manager_instance
+            )
         )
-    )
 
-    registry.register(
-        PlotAgent(
-            llm_manager=llm_manager_instance
-        )
+    return registry
+
+
+def create_agent_manager(
+    llm_manager_instance,
+) -> AgentManager:
+    """
+    创建 NovelForge AgentManager。
+
+    使用一个新的、已经完成全部 Agent 注册的
+    AgentRegistry 构建 AgentManager。
+    """
+
+    registry = create_agent_registry(
+        llm_manager_instance
     )
 
     return AgentManager(
-        registry=registry
+        registry
     )
 
 
-agent_manager = create_agent_manager(
+agent_registry = create_agent_registry(
     llm_manager
 )
 
-agent_registry = agent_manager.registry()
+agent_manager = AgentManager(
+    agent_registry
+)

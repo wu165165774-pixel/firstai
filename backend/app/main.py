@@ -69,7 +69,7 @@ app = FastAPI(
 
     title=settings.app_name,
     lifespan=lifespan,
-    version="0.14.0-alpha.3",
+    version="0.15.0-alpha.1",
 
 )
 

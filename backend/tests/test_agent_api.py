@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 
@@ -102,7 +102,7 @@ class SpecializedAgentTests(
             agent._system_prompt(),
         )
 
-    def test_bootstrap_registers_four_agents(
+    def test_bootstrap_registers_seven_agents(
         self,
     ) -> None:
 
@@ -112,12 +112,7 @@ class SpecializedAgentTests(
 
         self.assertEqual(
             manager.agents(),
-            [
-                "character",
-                "novel",
-                "plot",
-                "world",
-            ],
+            ["chapter", "character", "novel", "plot", "review", "rewrite", "world"],
         )
 
 
@@ -138,12 +133,7 @@ class AgentApiTests(
 
         self.assertEqual(
             names,
-            [
-                "character",
-                "novel",
-                "plot",
-                "world",
-            ],
+            ["chapter", "character", "novel", "plot", "review", "rewrite", "world"],
         )
 
     async def test_execute_agent(
