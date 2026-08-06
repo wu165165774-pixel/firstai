@@ -1483,3 +1483,50 @@ Real Qwen revision diff summary passed
 ```
 
 真实验收结果保留一个持续存在的 `ISSUE-001`，因此在一轮修订上限下返回 `max_revisions_reached`，并正确保持 `quality_gate_passed=false`。
+
+## v0.15.0-alpha.5 — Sprint 07D.4 Workflow Run Persistence
+
+章节生产工作流新增运行持久化和精确 Checkpoint 恢复。
+
+新增 API：
+
+```text
+POST /api/v1/workflows/chapter/runs
+GET  /api/v1/workflows/runs
+GET  /api/v1/workflows/runs/{run_id}
+POST /api/v1/workflows/runs/{run_id}/resume
+```
+
+新增能力：
+
+- SQLite 保存运行请求、结果和状态
+- 保存 Workflow Step 审计事件
+- 保存 Draft、Rewrite 和 Checkpoint 章节版本
+- `run_id / root_run_id / parent_run_id`
+- Backend 重启后继续查询
+- 未通过质量门禁的运行标记为 `resumable`
+- 从最新正文精确恢复
+- Resume 不重新调用 ChapterAgent
+- Resume 参数白名单保护
+- 成功运行禁止重复恢复
+- 运行失败状态持久化
+
+恢复时首个步骤为：
+
+```text
+stage: draft
+agent: checkpoint
+provider: workflow_checkpoint
+```
+
+验收：
+
+```text
+9/9 targeted workflow-run tests passed
+73/73 full regression tests passed
+Runtime Agent Manager compatibility passed
+Parent run persistence passed
+Backend restart persistence passed
+Exact checkpoint content match passed
+Parent-child lineage query passed
+```
