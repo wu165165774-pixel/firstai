@@ -121,6 +121,31 @@ class WorkflowAsyncQueue:
                     queue_status,
                     lease_expires_at
                 );
+
+                CREATE TABLE IF NOT EXISTS
+                workflow_workers (
+                    worker_id TEXT PRIMARY KEY,
+                    worker_status TEXT
+                        NOT NULL,
+                    capacity INTEGER
+                        NOT NULL,
+                    active_count INTEGER
+                        NOT NULL DEFAULT 0,
+                    started_at TEXT
+                        NOT NULL,
+                    heartbeat_at TEXT
+                        NOT NULL,
+                    stopped_at TEXT,
+                    metadata_json TEXT
+                        NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                idx_workflow_workers_status
+                ON workflow_workers(
+                    worker_status,
+                    heartbeat_at
+                );
                 """
             )
 
@@ -970,6 +995,383 @@ class WorkflowAsyncQueue:
             )
 
             conn.commit()
+
+
+    def register_worker(
+        self,
+        worker_id: str,
+        *,
+        capacity: int,
+        metadata: dict[str, Any]
+        | None = None,
+    ) -> None:
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+
+            conn.execute(
+                """
+                INSERT INTO workflow_workers (
+                    worker_id,
+                    worker_status,
+                    capacity,
+                    active_count,
+                    started_at,
+                    heartbeat_at,
+                    stopped_at,
+                    metadata_json
+                )
+                VALUES (
+                    ?,
+                    'running',
+                    ?,
+                    0,
+                    ?,
+                    ?,
+                    NULL,
+                    ?
+                )
+                ON CONFLICT(worker_id)
+                DO UPDATE SET
+                    worker_status =
+                        'running',
+                    capacity =
+                        excluded.capacity,
+                    active_count = 0,
+                    started_at =
+                        excluded.started_at,
+                    heartbeat_at =
+                        excluded.heartbeat_at,
+                    stopped_at = NULL,
+                    metadata_json =
+                        excluded.metadata_json
+                """,
+                (
+                    worker_id,
+                    max(
+                        int(capacity),
+                        1,
+                    ),
+                    now,
+                    now,
+                    _json_dumps(
+                        metadata or {}
+                    ),
+                ),
+            )
+
+            conn.commit()
+
+    def heartbeat_worker(
+        self,
+        worker_id: str,
+        *,
+        active_count: int,
+    ) -> bool:
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+
+            updated = conn.execute(
+                """
+                UPDATE workflow_workers
+                SET
+                    worker_status =
+                        'running',
+                    active_count = ?,
+                    heartbeat_at = ?,
+                    stopped_at = NULL
+                WHERE worker_id = ?
+                """,
+                (
+                    max(
+                        int(active_count),
+                        0,
+                    ),
+                    now,
+                    worker_id,
+                ),
+            ).rowcount
+
+            conn.commit()
+
+        return updated == 1
+
+    def mark_worker_stopping(
+        self,
+        worker_id: str,
+    ) -> None:
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+
+            conn.execute(
+                """
+                UPDATE workflow_workers
+                SET
+                    worker_status =
+                        'stopping',
+                    heartbeat_at = ?
+                WHERE worker_id = ?
+                """,
+                (
+                    now,
+                    worker_id,
+                ),
+            )
+
+            conn.commit()
+
+    def mark_worker_stopped(
+        self,
+        worker_id: str,
+    ) -> None:
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+
+            conn.execute(
+                """
+                UPDATE workflow_workers
+                SET
+                    worker_status =
+                        'stopped',
+                    active_count = 0,
+                    heartbeat_at = ?,
+                    stopped_at = ?
+                WHERE worker_id = ?
+                """,
+                (
+                    now,
+                    now,
+                    worker_id,
+                ),
+            )
+
+            conn.commit()
+
+    def list_workers(
+        self,
+        *,
+        stale_after_seconds: float = 90.0,
+    ) -> list[dict[str, Any]]:
+
+        with self._connect() as conn:
+
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM workflow_workers
+                ORDER BY started_at ASC
+                """
+            ).fetchall()
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+        stale_after = max(
+            float(
+                stale_after_seconds
+            ),
+            0.0,
+        )
+
+        workers: list[
+            dict[str, Any]
+        ] = []
+
+        for row in rows:
+
+            heartbeat_at = (
+                datetime.fromisoformat(
+                    row["heartbeat_at"]
+                )
+            )
+
+            worker_status = (
+                row["worker_status"]
+            )
+
+            is_stale = (
+                worker_status
+                in {
+                    "running",
+                    "stopping",
+                }
+                and (
+                    now - heartbeat_at
+                ).total_seconds()
+                > stale_after
+            )
+
+            effective_status = (
+                "stale"
+                if is_stale
+                else worker_status
+            )
+
+            workers.append(
+                {
+                    "worker_id": (
+                        row["worker_id"]
+                    ),
+                    "worker_status": (
+                        effective_status
+                    ),
+                    "capacity": int(
+                        row["capacity"]
+                    ),
+                    "active_count": int(
+                        row[
+                            "active_count"
+                        ]
+                    ),
+                    "started_at": (
+                        row["started_at"]
+                    ),
+                    "heartbeat_at": (
+                        row["heartbeat_at"]
+                    ),
+                    "stopped_at": (
+                        row["stopped_at"]
+                    ),
+                    "metadata": json.loads(
+                        row[
+                            "metadata_json"
+                        ]
+                        or "{}"
+                    ),
+                }
+            )
+
+        return workers
+
+    def release_claim(
+        self,
+        run_id: str,
+        *,
+        worker_id: str,
+        reason: str,
+    ) -> bool:
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+
+            conn.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            row = conn.execute(
+                """
+                SELECT
+                    queue_status,
+                    cancel_requested,
+                    lease_owner
+                FROM workflow_run_jobs
+                WHERE run_id = ?
+                """,
+                (
+                    run_id,
+                ),
+            ).fetchone()
+
+            if row is None:
+
+                conn.rollback()
+
+                raise KeyError(
+                    f"Workflow job not "
+                    f"found: {run_id}"
+                )
+
+            if (
+                row["lease_owner"]
+                != worker_id
+                or row["queue_status"]
+                not in {
+                    "running",
+                    "cancelling",
+                }
+            ):
+
+                conn.rollback()
+
+                return False
+
+            if bool(
+                row["cancel_requested"]
+            ):
+
+                conn.rollback()
+
+                self.mark_cancelled(
+                    run_id,
+                    reason=reason,
+                )
+
+                return True
+
+            conn.execute(
+                """
+                UPDATE workflow_run_jobs
+                SET
+                    queue_status = 'queued',
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    heartbeat_at = NULL,
+                    updated_at = ?
+                WHERE run_id = ?
+                """,
+                (
+                    now,
+                    run_id,
+                ),
+            )
+
+            conn.execute(
+                """
+                UPDATE workflow_runs
+                SET
+                    execution_status =
+                        'queued',
+                    updated_at = ?
+                WHERE run_id = ?
+                """,
+                (
+                    now,
+                    run_id,
+                ),
+            )
+
+            sequence_no = (
+                self._next_sequence(
+                    conn,
+                    run_id,
+                )
+            )
+
+            WorkflowRunStorage._insert_event(
+                conn,
+                run_id=run_id,
+                sequence_no=(
+                    sequence_no
+                ),
+                event_type="worker_released",
+                payload={
+                    "worker_id": worker_id,
+                    "reason": reason,
+                },
+            )
+
+            conn.commit()
+
+        return True
 
     def recover_stale(
         self,

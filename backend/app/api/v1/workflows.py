@@ -25,6 +25,7 @@ from app.workflows.run_schemas import (
     WorkflowResumeRequest,
     WorkflowRunListResponse,
     WorkflowRunResponse,
+    WorkflowWorkerListResponse,
 )
 from app.workflows.run_service import (
     WorkflowRunService,
@@ -364,4 +365,37 @@ async def cancel_workflow_run(
 
     return WorkflowAsyncSubmissionResponse(
         data=submission
+    )
+
+@router.get(
+    "/workers",
+    response_model=(
+        WorkflowWorkerListResponse
+    ),
+)
+async def list_workflow_workers(
+    request: Request,
+    stale_after_seconds: float = Query(
+        default=90.0,
+        ge=1.0,
+        le=3600.0,
+    ),
+) -> WorkflowWorkerListResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    workers = (
+        executor
+        .queue
+        .list_workers(
+            stale_after_seconds=(
+                stale_after_seconds
+            )
+        )
+    )
+
+    return WorkflowWorkerListResponse(
+        data=workers
     )

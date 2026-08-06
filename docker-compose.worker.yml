@@ -1,0 +1,31 @@
+services:
+  backend:
+    environment:
+      NOVELFORGE_WORKFLOW_EXECUTION_MODE: external
+      NOVELFORGE_WORKFLOW_DB_PATH: /app/data/workflow_runs.db
+
+  worker:
+    build:
+      context: ./backend
+    container_name: novelforge-worker
+    working_dir: /app
+    command:
+      - python
+      - -m
+      - app.workers.workflow_worker
+    environment:
+      NOVELFORGE_WORKFLOW_EXECUTION_MODE: worker
+      NOVELFORGE_WORKFLOW_DB_PATH: /app/data/workflow_runs.db
+      NOVELFORGE_WORKFLOW_CONCURRENCY: "1"
+      NOVELFORGE_WORKFLOW_LEASE_SECONDS: "12"
+      NOVELFORGE_WORKFLOW_HEARTBEAT_SECONDS: "3"
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_HOST: http://ollama:11434
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped

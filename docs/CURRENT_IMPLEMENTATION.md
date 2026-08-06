@@ -1581,3 +1581,49 @@ Real Qwen background execution passed
 Queued cancellation passed
 Restart persistence passed
 ```
+
+## v0.15.0-alpha.7 — Sprint 07D.6 Standalone Workflow Worker
+
+Workflow 执行从 Backend API 进程解耦到独立 Worker 容器。
+
+容器模式：
+
+```text
+novelforge-backend: external
+novelforge-worker: worker
+novelforge-ollama: Qwen inference
+```
+
+新增能力：
+
+- 独立 Worker 进程入口
+- SQLite Worker 注册表
+- Worker 心跳、容量和活动任务数
+- Worker 状态查询 API
+- 多 Worker 原子任务领取
+- API 与 Worker 跨进程取消
+- SIGINT/SIGTERM 优雅停机
+- 停机任务释放回 queued
+- Worker 崩溃后的租约恢复
+- 新 Worker 自动接管同一 Run
+- 独立 Compose Worker 覆盖配置
+- embedded 模式向后兼容
+
+新增 API：
+
+```text
+GET /api/v1/workflows/workers
+```
+
+验收：
+
+```text
+9/9 standalone Worker tests passed
+90/90 full regression tests passed
+Backend external mode passed
+Worker mode and registration passed
+Real Worker container crash passed
+lease_recovered count = 1
+run_completed count = 1
+chapter version count = 1
+```

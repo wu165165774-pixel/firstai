@@ -191,6 +191,7 @@ class AsyncWorkflowTests(
 
         executor = AsyncWorkflowExecutor(
             manager,
+            execution_mode="embedded",
             db_path=self.db_path,
             poll_interval=0.01,
             lease_seconds=1.0,
@@ -240,6 +241,7 @@ class AsyncWorkflowTests(
 
         executor = AsyncWorkflowExecutor(
             ApprovedManager(),
+            execution_mode="embedded",
             db_path=self.db_path,
             poll_interval=0.01,
             lease_seconds=1.0,
@@ -333,6 +335,7 @@ class AsyncWorkflowTests(
 
         executor = AsyncWorkflowExecutor(
             manager,
+            execution_mode="embedded",
             db_path=self.db_path,
             poll_interval=0.01,
             lease_seconds=1.0,
@@ -443,6 +446,7 @@ class AsyncWorkflowTests(
 
         executor = AsyncWorkflowExecutor(
             manager,
+            execution_mode="embedded",
             db_path=self.db_path,
             max_concurrency=1,
             poll_interval=0.01,

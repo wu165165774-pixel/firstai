@@ -35,6 +35,7 @@ class AsyncWorkflowExecutor:
         lease_seconds: float | None = None,
         heartbeat_seconds: float | None = None,
         poll_interval: float = 0.25,
+        execution_mode: str | None = None,
     ) -> None:
 
         self._agent_manager = (
@@ -103,12 +104,35 @@ class AsyncWorkflowExecutor:
             0.01,
         )
 
+        mode = (
+            execution_mode
+            or os.getenv(
+                "NOVELFORGE_WORKFLOW_EXECUTION_MODE",
+                "embedded",
+            )
+        ).strip().lower()
+
+        if mode not in {
+            "embedded",
+            "external",
+            "worker",
+        }:
+
+            raise ValueError(
+                "Workflow execution mode must "
+                "be embedded, external, or worker."
+            )
+
+        self._execution_mode = mode
+
         self._worker_id = (
             "worker-"
             + str(
                 uuid.uuid4()
             )
         )
+
+        self._worker_registered = False
 
         self._loop_task: (
             asyncio.Task[Any]
@@ -129,9 +153,33 @@ class AsyncWorkflowExecutor:
 
         return self._queue
 
+    @property
+    def execution_mode(
+        self,
+    ) -> str:
+
+        return self._execution_mode
+
+    @property
+    def worker_id(
+        self,
+    ) -> str:
+
+        return self._worker_id
+
     def ensure_started(
         self,
+        *,
+        force: bool = False,
     ) -> None:
+
+        if (
+            self._execution_mode
+            == "external"
+            and not force
+        ):
+
+            return
 
         if (
             self._loop_task is not None
@@ -152,6 +200,22 @@ class AsyncWorkflowExecutor:
                 ),
             )
         )
+
+    async def run_forever(
+        self,
+    ) -> None:
+
+        self.ensure_started(
+            force=True
+        )
+
+        if self._loop_task is None:
+
+            raise RuntimeError(
+                "Workflow worker did not start."
+            )
+
+        await self._loop_task
 
     async def submit(
         self,
@@ -303,6 +367,12 @@ class AsyncWorkflowExecutor:
 
         self._stopping = True
 
+        if self._worker_registered:
+
+            self._queue.mark_worker_stopping(
+                self._worker_id
+            )
+
         if self._loop_task is not None:
 
             self._loop_task.cancel()
@@ -337,13 +407,41 @@ class AsyncWorkflowExecutor:
 
         self._loop_task = None
 
+        if self._worker_registered:
+
+            self._queue.mark_worker_stopped(
+                self._worker_id
+            )
+
+            self._worker_registered = False
+
     async def _worker_loop(
         self,
     ) -> None:
 
+        self._queue.register_worker(
+            self._worker_id,
+            capacity=self._max_concurrency,
+            metadata={
+                "execution_mode": (
+                    self._execution_mode
+                ),
+                "process_id": os.getpid(),
+            },
+        )
+
+        self._worker_registered = True
+
         try:
 
             while not self._stopping:
+
+                self._queue.heartbeat_worker(
+                    self._worker_id,
+                    active_count=len(
+                        self._active
+                    ),
+                )
 
                 self._queue.recover_stale()
 
@@ -409,6 +507,7 @@ class AsyncWorkflowExecutor:
     async def _heartbeat_loop(
         self,
         run_id: str,
+        execution_task: asyncio.Task[Any],
     ) -> None:
 
         try:
@@ -437,6 +536,18 @@ class AsyncWorkflowExecutor:
 
                     return
 
+                if (
+                    self
+                    ._queue
+                    .is_cancel_requested(
+                        run_id
+                    )
+                ):
+
+                    execution_task.cancel()
+
+                    return
+
         except asyncio.CancelledError:
 
             return
@@ -447,10 +558,22 @@ class AsyncWorkflowExecutor:
         request,
     ) -> None:
 
+        execution_task = (
+            asyncio.current_task()
+        )
+
+        if execution_task is None:
+
+            raise RuntimeError(
+                "Workflow execution task "
+                "is not available."
+            )
+
         heartbeat_task = (
             asyncio.create_task(
                 self._heartbeat_loop(
-                    run_id
+                    run_id,
+                    execution_task,
                 )
             )
         )
@@ -491,12 +614,33 @@ class AsyncWorkflowExecutor:
 
         except asyncio.CancelledError:
 
-            self._queue.mark_cancelled(
-                run_id,
-                reason=(
-                    "Cancelled by user."
-                ),
-            )
+            if (
+                self
+                ._queue
+                .is_cancel_requested(
+                    run_id
+                )
+            ):
+
+                self._queue.mark_cancelled(
+                    run_id,
+                    reason=(
+                        "Cancelled by user."
+                    ),
+                )
+
+            else:
+
+                self._queue.release_claim(
+                    run_id,
+                    worker_id=(
+                        self._worker_id
+                    ),
+                    reason=(
+                        "Worker stopped before "
+                        "the run completed."
+                    ),
+                )
 
         except Exception as exc:
 

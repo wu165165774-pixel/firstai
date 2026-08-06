@@ -249,3 +249,54 @@ class WorkflowAsyncSubmissionResponse(
     message: str = "success"
 
     data: WorkflowAsyncSubmission
+
+WorkflowWorkerStatus = Literal[
+    "running",
+    "stopping",
+    "stopped",
+    "stale",
+]
+
+
+class WorkflowWorkerInfo(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    worker_id: str
+
+    worker_status: WorkflowWorkerStatus
+
+    capacity: int = Field(
+        ge=1
+    )
+
+    active_count: int = Field(
+        ge=0
+    )
+
+    started_at: str
+
+    heartbeat_at: str
+
+    stopped_at: str | None = None
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
+
+class WorkflowWorkerListResponse(
+    BaseModel
+):
+
+    code: int = 0
+
+    message: str = "success"
+
+    data: list[
+        WorkflowWorkerInfo
+    ] = Field(
+        default_factory=list
+    )
