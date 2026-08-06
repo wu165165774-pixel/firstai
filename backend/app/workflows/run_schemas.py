@@ -18,7 +18,10 @@ from app.workflows.schemas import (
 
 
 WorkflowExecutionStatus = Literal[
+    "queued",
     "running",
+    "cancelling",
+    "cancelled",
     "succeeded",
     "resumable",
     "failed",
@@ -184,3 +187,65 @@ class WorkflowResumeRequest(BaseModel):
     ] = Field(
         default_factory=dict
     )
+
+WorkflowJobQueueStatus = Literal[
+    "queued",
+    "running",
+    "cancelling",
+    "cancelled",
+    "completed",
+    "failed",
+]
+
+
+class WorkflowJobControl(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    run_id: str
+
+    queue_status: (
+        WorkflowJobQueueStatus
+    )
+
+    idempotency_key: str | None = None
+
+    cancel_requested: bool = False
+
+    lease_owner: str | None = None
+
+    lease_expires_at: str | None = None
+
+    heartbeat_at: str | None = None
+
+    queued_at: str
+
+    claimed_at: str | None = None
+
+    updated_at: str
+
+
+class WorkflowAsyncSubmission(BaseModel):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    run: WorkflowRunDetail
+
+    job: WorkflowJobControl
+
+    deduplicated: bool = False
+
+
+class WorkflowAsyncSubmissionResponse(
+    BaseModel
+):
+
+    code: int = 0
+
+    message: str = "success"
+
+    data: WorkflowAsyncSubmission

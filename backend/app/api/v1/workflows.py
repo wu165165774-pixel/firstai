@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import (
     APIRouter,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -12,10 +13,15 @@ from app.agents.bootstrap import (
     agent_manager as bootstrap_agent_manager,
 )
 
+from app.workflows.async_executor import (
+    AsyncWorkflowExecutor,
+)
+
 from app.workflows.chapter_workflow import (
     ChapterWorkflow,
 )
 from app.workflows.run_schemas import (
+    WorkflowAsyncSubmissionResponse,
     WorkflowResumeRequest,
     WorkflowRunListResponse,
     WorkflowRunResponse,
@@ -38,6 +44,33 @@ router = APIRouter(
         "Workflows",
     ],
 )
+
+
+_async_executor_instance: (
+    AsyncWorkflowExecutor
+    | None
+) = None
+
+
+def _async_executor(
+    request: Request,
+) -> AsyncWorkflowExecutor:
+
+    global _async_executor_instance
+
+    _ = request
+
+    if _async_executor_instance is None:
+
+        _async_executor_instance = (
+            AsyncWorkflowExecutor(
+                bootstrap_agent_manager
+            )
+        )
+
+    _async_executor_instance.ensure_started()
+
+    return _async_executor_instance
 
 
 def _agent_manager(
@@ -212,4 +245,123 @@ async def resume_workflow_run(
 
     return WorkflowRunResponse(
         data=detail
+    )
+
+@router.post(
+    "/chapter/runs/async",
+    response_model=(
+        WorkflowAsyncSubmissionResponse
+    ),
+    status_code=(
+        status.HTTP_202_ACCEPTED
+    ),
+)
+async def enqueue_chapter_workflow_run(
+    payload: ChapterWorkflowRequest,
+    request: Request,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+    ),
+) -> WorkflowAsyncSubmissionResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    try:
+
+        submission = await executor.submit(
+            payload,
+            idempotency_key=(
+                idempotency_key
+            ),
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowAsyncSubmissionResponse(
+        data=submission
+    )
+
+
+@router.get(
+    "/runs/{run_id}/control",
+    response_model=(
+        WorkflowAsyncSubmissionResponse
+    ),
+)
+async def get_workflow_run_control(
+    run_id: str,
+    request: Request,
+) -> WorkflowAsyncSubmissionResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    try:
+
+        submission = (
+            executor.get_submission(
+                run_id
+            )
+        )
+
+    except KeyError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_404_NOT_FOUND
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowAsyncSubmissionResponse(
+        data=submission
+    )
+
+
+@router.post(
+    "/runs/{run_id}/cancel",
+    response_model=(
+        WorkflowAsyncSubmissionResponse
+    ),
+)
+async def cancel_workflow_run(
+    run_id: str,
+    request: Request,
+) -> WorkflowAsyncSubmissionResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    try:
+
+        submission = await executor.cancel(
+            run_id
+        )
+
+    except KeyError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_404_NOT_FOUND
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowAsyncSubmissionResponse(
+        data=submission
     )

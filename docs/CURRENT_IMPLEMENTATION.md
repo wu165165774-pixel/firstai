@@ -1530,3 +1530,54 @@ Backend restart persistence passed
 Exact checkpoint content match passed
 Parent-child lineage query passed
 ```
+
+## v0.15.0-alpha.6 — Sprint 07D.5 Async Workflow Queue
+
+章节生产工作流新增持久化异步队列和运行控制。
+
+新增 API：
+
+```text
+POST /api/v1/workflows/chapter/runs/async
+GET  /api/v1/workflows/runs/{run_id}/control
+POST /api/v1/workflows/runs/{run_id}/cancel
+```
+
+新增能力：
+
+- HTTP 202 立即返回 `run_id`
+- SQLite 持久任务队列
+- 进程内后台 Worker
+- 原子任务领取
+- 幂等提交和 `Idempotency-Key`
+- 默认单任务并发控制
+- queued 和 running 任务取消
+- Worker 租约与心跳
+- 租约过期任务自动回收
+- Backend 重启后恢复 Worker
+- Run、Queue、Event 状态同步持久化
+- 保持同步 Run 和 Resume API 兼容
+
+队列状态：
+
+```text
+queued
+running
+cancelling
+cancelled
+completed
+failed
+```
+
+验收：
+
+```text
+8/8 async workflow tests passed
+9/9 workflow persistence tests passed
+81/81 full regression tests passed
+HTTP 202 immediate submission passed
+Idempotency match passed
+Real Qwen background execution passed
+Queued cancellation passed
+Restart persistence passed
+```

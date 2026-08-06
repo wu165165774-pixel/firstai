@@ -526,16 +526,27 @@ class WorkflowRunStorage:
                     f"{run_id}"
                 )
 
-            conn.execute(
+            sequence_row = conn.execute(
                 """
-                DELETE FROM
-                workflow_run_events
+                SELECT COALESCE(
+                    MAX(sequence_no),
+                    -1
+                ) AS max_sequence
+                FROM workflow_run_events
                 WHERE run_id = ?
-                AND sequence_no > 0
                 """,
                 (
                     run_id,
                 ),
+            ).fetchone()
+
+            sequence_no = (
+                int(
+                    sequence_row[
+                        "max_sequence"
+                    ]
+                )
+                + 1
             )
 
             conn.execute(
@@ -549,7 +560,6 @@ class WorkflowRunStorage:
                 ),
             )
 
-            sequence_no = 1
             version_index = 0
 
             for step in (
