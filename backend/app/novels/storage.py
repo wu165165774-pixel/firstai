@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from .schemas import (
+    ChapterPlan,
+    ChapterPlanCreate,
+    ChapterPlanRevision,
+    ChapterPlanUpdate,
     NovelPlan,
     NovelPlanRevision,
     NovelPlanUpdate,
@@ -240,6 +244,76 @@ class NovelProjectStorage:
                 CREATE INDEX IF NOT EXISTS idx_story_arc_revisions_time
                 ON story_arc_revisions(
                     arc_id,
+                    revision DESC
+                );
+
+
+                CREATE TABLE IF NOT EXISTS chapter_plans (
+                    chapter_plan_id TEXT PRIMARY KEY,
+                    novel_id TEXT NOT NULL,
+                    arc_id TEXT NOT NULL,
+                    chapter_number INTEGER NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    source_project_revision INTEGER NOT NULL,
+                    source_story_bible_revision INTEGER NOT NULL,
+                    source_novel_plan_revision INTEGER NOT NULL,
+                    source_story_arc_revision INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    objective TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    pov_character_id TEXT,
+                    pov_character_name TEXT NOT NULL DEFAULT '',
+                    opening_state TEXT NOT NULL DEFAULT '',
+                    closing_state TEXT NOT NULL DEFAULT '',
+                    conflict TEXT NOT NULL DEFAULT '',
+                    reveal TEXT NOT NULL DEFAULT '',
+                    hook TEXT NOT NULL DEFAULT '',
+                    scene_beats_json TEXT NOT NULL DEFAULT '[]',
+                    continuity_dependencies_json TEXT NOT NULL DEFAULT '[]',
+                    target_word_count INTEGER NOT NULL DEFAULT 0,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(novel_id)
+                        REFERENCES novel_projects(novel_id)
+                        ON DELETE CASCADE,
+                    FOREIGN KEY(arc_id)
+                        REFERENCES story_arcs(arc_id)
+                        ON DELETE CASCADE,
+                    UNIQUE(novel_id, chapter_number)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chapter_plans_order
+                ON chapter_plans(
+                    novel_id,
+                    chapter_number
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chapter_plans_arc
+                ON chapter_plans(
+                    novel_id,
+                    arc_id,
+                    chapter_number
+                );
+
+                CREATE TABLE IF NOT EXISTS chapter_plan_revisions (
+                    chapter_plan_id TEXT NOT NULL,
+                    novel_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(chapter_plan_id, revision),
+                    FOREIGN KEY(chapter_plan_id)
+                        REFERENCES chapter_plans(chapter_plan_id)
+                        ON DELETE CASCADE,
+                    FOREIGN KEY(novel_id)
+                        REFERENCES novel_projects(novel_id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chapter_plan_revisions_time
+                ON chapter_plan_revisions(
+                    chapter_plan_id,
                     revision DESC
                 );
                 """
@@ -1535,6 +1609,682 @@ class NovelProjectStorage:
 
         return StoryArcRevision(
             arc_id=row["arc_id"],
+            novel_id=row["novel_id"],
+            revision=int(row["revision"]),
+            snapshot=snapshot,
+            created_at=row["created_at"],
+        )
+
+
+    def create_chapter_plan(
+        self,
+        novel_id: str,
+        payload: ChapterPlanCreate,
+    ) -> ChapterPlan:
+        chapter_plan_id = str(uuid.uuid4())
+        now = _utc_now()
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            source_row = self._get_chapter_source_row(
+                conn,
+                novel_id,
+                payload.arc_id,
+            )
+
+            if source_row is None:
+                project = conn.execute(
+                    """
+                    SELECT novel_id
+                    FROM novel_projects
+                    WHERE novel_id = ?
+                    """,
+                    (novel_id,),
+                ).fetchone()
+
+                if project is None:
+                    raise NovelProjectNotFoundError(novel_id)
+
+                raise NovelProjectNotFoundError(
+                    f"{novel_id}:story-arc:{payload.arc_id}"
+                )
+
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO chapter_plans (
+                        chapter_plan_id,
+                        novel_id,
+                        arc_id,
+                        chapter_number,
+                        revision,
+                        source_project_revision,
+                        source_story_bible_revision,
+                        source_novel_plan_revision,
+                        source_story_arc_revision,
+                        title,
+                        objective,
+                        summary,
+                        pov_character_id,
+                        pov_character_name,
+                        opening_state,
+                        closing_state,
+                        conflict,
+                        reveal,
+                        hook,
+                        scene_beats_json,
+                        continuity_dependencies_json,
+                        target_word_count,
+                        metadata_json,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        chapter_plan_id,
+                        novel_id,
+                        payload.arc_id,
+                        payload.chapter_number,
+                        int(source_row["project_revision"]),
+                        int(source_row["story_bible_revision"]),
+                        int(source_row["novel_plan_revision"]),
+                        int(source_row["story_arc_revision"]),
+                        payload.title,
+                        payload.objective,
+                        payload.summary,
+                        payload.pov_character_id,
+                        payload.pov_character_name,
+                        payload.opening_state,
+                        payload.closing_state,
+                        payload.conflict,
+                        payload.reveal,
+                        payload.hook,
+                        _json_dump([
+                            item.model_dump()
+                            for item in payload.scene_beats
+                        ]),
+                        _json_dump(payload.continuity_dependencies),
+                        payload.target_word_count,
+                        _json_dump(payload.metadata),
+                        now,
+                        now,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise NovelRevisionConflictError(
+                    "Chapter Plan position conflict: "
+                    f"chapter={payload.chapter_number}"
+                ) from exc
+
+            row = self._get_chapter_plan_row(
+                conn,
+                novel_id,
+                chapter_plan_id,
+            )
+            plan = self._chapter_plan_from_row(row)
+            self._insert_chapter_plan_revision(
+                conn,
+                plan,
+                now,
+            )
+            conn.execute(
+                """
+                UPDATE novel_projects
+                SET updated_at = ?
+                WHERE novel_id = ?
+                """,
+                (now, novel_id),
+            )
+            conn.commit()
+
+        return plan
+
+    def list_chapter_plans(
+        self,
+        novel_id: str,
+        *,
+        arc_id: str | None = None,
+        volume_number: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[ChapterPlan]:
+        if not self._project_exists(novel_id):
+            raise NovelProjectNotFoundError(novel_id)
+
+        clauses = ["c.novel_id = ?"]
+        params: list[Any] = [novel_id]
+
+        if arc_id is not None:
+            clauses.append("c.arc_id = ?")
+            params.append(arc_id)
+
+        if volume_number is not None:
+            clauses.append("a.volume_number = ?")
+            params.append(int(volume_number))
+
+        params.extend([
+            min(max(int(limit), 1), 500),
+            max(int(offset), 0),
+        ])
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT c.*,
+                       p.revision AS current_project_revision,
+                       b.revision AS current_story_bible_revision,
+                       pl.revision AS current_novel_plan_revision,
+                       a.revision AS current_story_arc_revision,
+                       a.volume_number AS current_volume_number,
+                       a.arc_number AS current_arc_number
+                FROM chapter_plans AS c
+                JOIN novel_projects AS p
+                  ON p.novel_id = c.novel_id
+                JOIN story_bibles AS b
+                  ON b.novel_id = c.novel_id
+                JOIN novel_plans AS pl
+                  ON pl.novel_id = c.novel_id
+                JOIN story_arcs AS a
+                  ON a.novel_id = c.novel_id
+                 AND a.arc_id = c.arc_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY
+                    c.chapter_number ASC,
+                    c.chapter_plan_id ASC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+
+        return [
+            self._chapter_plan_from_row(row)
+            for row in rows
+        ]
+
+    def get_chapter_plan(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+    ) -> ChapterPlan:
+        with self._connect() as conn:
+            row = self._get_chapter_plan_row(
+                conn,
+                novel_id,
+                chapter_plan_id,
+            )
+
+        if row is None:
+            if not self._project_exists(novel_id):
+                raise NovelProjectNotFoundError(novel_id)
+            raise NovelProjectNotFoundError(
+                f"{novel_id}:chapter-plan:{chapter_plan_id}"
+            )
+
+        return self._chapter_plan_from_row(row)
+
+    def update_chapter_plan(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+        payload: ChapterPlanUpdate,
+    ) -> ChapterPlan:
+        updates = payload.model_dump(
+            exclude_unset=True,
+        )
+        expected_revision = updates.pop(
+            "expected_revision",
+            None,
+        )
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = self._get_chapter_plan_row(
+                conn,
+                novel_id,
+                chapter_plan_id,
+            )
+
+            if row is None:
+                project = conn.execute(
+                    """
+                    SELECT novel_id
+                    FROM novel_projects
+                    WHERE novel_id = ?
+                    """,
+                    (novel_id,),
+                ).fetchone()
+
+                if project is None:
+                    raise NovelProjectNotFoundError(novel_id)
+
+                raise NovelProjectNotFoundError(
+                    f"{novel_id}:chapter-plan:{chapter_plan_id}"
+                )
+
+            current_revision = int(row["revision"])
+
+            if (
+                expected_revision is not None
+                and expected_revision != current_revision
+            ):
+                raise NovelRevisionConflictError(
+                    "Chapter Plan revision conflict: "
+                    f"expected={expected_revision}, "
+                    f"actual={current_revision}"
+                )
+
+            if not updates:
+                conn.commit()
+                return self._chapter_plan_from_row(row)
+
+            target_arc_id = updates.get(
+                "arc_id",
+                row["arc_id"],
+            )
+            source_row = self._get_chapter_source_row(
+                conn,
+                novel_id,
+                target_arc_id,
+            )
+
+            if source_row is None:
+                raise NovelProjectNotFoundError(
+                    f"{novel_id}:story-arc:{target_arc_id}"
+                )
+
+            column_map = {
+                "arc_id": "arc_id",
+                "chapter_number": "chapter_number",
+                "title": "title",
+                "objective": "objective",
+                "summary": "summary",
+                "pov_character_id": "pov_character_id",
+                "pov_character_name": "pov_character_name",
+                "opening_state": "opening_state",
+                "closing_state": "closing_state",
+                "conflict": "conflict",
+                "reveal": "reveal",
+                "hook": "hook",
+                "scene_beats": "scene_beats_json",
+                "continuity_dependencies": "continuity_dependencies_json",
+                "target_word_count": "target_word_count",
+                "metadata": "metadata_json",
+            }
+
+            json_fields = {
+                "scene_beats",
+                "continuity_dependencies",
+                "metadata",
+            }
+
+            assignments: list[str] = []
+            values: list[Any] = []
+
+            for field, value in updates.items():
+                assignments.append(
+                    f"{column_map[field]} = ?"
+                )
+
+                if field in json_fields:
+                    if isinstance(value, list):
+                        value = [
+                            item.model_dump()
+                            if hasattr(item, "model_dump")
+                            else item
+                            for item in value
+                        ]
+                    value = _json_dump(value)
+
+                values.append(value)
+
+            now = _utc_now()
+
+            assignments.extend([
+                "source_project_revision = ?",
+                "source_story_bible_revision = ?",
+                "source_novel_plan_revision = ?",
+                "source_story_arc_revision = ?",
+                "revision = revision + 1",
+                "updated_at = ?",
+            ])
+
+            values.extend([
+                int(source_row["project_revision"]),
+                int(source_row["story_bible_revision"]),
+                int(source_row["novel_plan_revision"]),
+                int(source_row["story_arc_revision"]),
+                now,
+                novel_id,
+                chapter_plan_id,
+            ])
+
+            try:
+                conn.execute(
+                    f"""
+                    UPDATE chapter_plans
+                    SET {', '.join(assignments)}
+                    WHERE novel_id = ?
+                      AND chapter_plan_id = ?
+                    """,
+                    tuple(values),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise NovelRevisionConflictError(
+                    "Chapter Plan position conflict"
+                ) from exc
+
+            updated_row = self._get_chapter_plan_row(
+                conn,
+                novel_id,
+                chapter_plan_id,
+            )
+            plan = self._chapter_plan_from_row(
+                updated_row
+            )
+            self._insert_chapter_plan_revision(
+                conn,
+                plan,
+                now,
+            )
+            conn.execute(
+                """
+                UPDATE novel_projects
+                SET updated_at = ?
+                WHERE novel_id = ?
+                """,
+                (now, novel_id),
+            )
+            conn.commit()
+
+        return plan
+
+    def list_chapter_plan_revisions(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[ChapterPlanRevision]:
+        self.get_chapter_plan(
+            novel_id,
+            chapter_plan_id,
+        )
+
+        normalized_limit = min(
+            max(int(limit), 1),
+            500,
+        )
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    chapter_plan_id,
+                    novel_id,
+                    revision,
+                    snapshot_json,
+                    created_at
+                FROM chapter_plan_revisions
+                WHERE novel_id = ?
+                  AND chapter_plan_id = ?
+                ORDER BY revision DESC
+                LIMIT ?
+                """,
+                (
+                    novel_id,
+                    chapter_plan_id,
+                    normalized_limit,
+                ),
+            ).fetchall()
+
+        return [
+            self._chapter_plan_revision_from_row(row)
+            for row in rows
+        ]
+
+    def get_chapter_plan_revision(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+        revision: int,
+    ) -> ChapterPlanRevision:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    chapter_plan_id,
+                    novel_id,
+                    revision,
+                    snapshot_json,
+                    created_at
+                FROM chapter_plan_revisions
+                WHERE novel_id = ?
+                  AND chapter_plan_id = ?
+                  AND revision = ?
+                """,
+                (
+                    novel_id,
+                    chapter_plan_id,
+                    int(revision),
+                ),
+            ).fetchone()
+
+        if row is None:
+            if not self._project_exists(novel_id):
+                raise NovelProjectNotFoundError(novel_id)
+
+            raise NovelProjectNotFoundError(
+                f"{novel_id}:chapter-plan:"
+                f"{chapter_plan_id}:{revision}"
+            )
+
+        return self._chapter_plan_revision_from_row(
+            row
+        )
+
+    @staticmethod
+    def _get_chapter_source_row(
+        conn: sqlite3.Connection,
+        novel_id: str,
+        arc_id: str,
+    ) -> sqlite3.Row | None:
+        return conn.execute(
+            """
+            SELECT
+                p.revision AS project_revision,
+                b.revision AS story_bible_revision,
+                pl.revision AS novel_plan_revision,
+                a.revision AS story_arc_revision,
+                a.volume_number AS volume_number,
+                a.arc_number AS arc_number
+            FROM novel_projects AS p
+            JOIN story_bibles AS b
+              ON b.novel_id = p.novel_id
+            JOIN novel_plans AS pl
+              ON pl.novel_id = p.novel_id
+            JOIN story_arcs AS a
+              ON a.novel_id = p.novel_id
+             AND a.arc_id = ?
+            WHERE p.novel_id = ?
+            """,
+            (
+                arc_id,
+                novel_id,
+            ),
+        ).fetchone()
+
+    @staticmethod
+    def _get_chapter_plan_row(
+        conn: sqlite3.Connection,
+        novel_id: str,
+        chapter_plan_id: str,
+    ) -> sqlite3.Row | None:
+        return conn.execute(
+            """
+            SELECT c.*,
+                   p.revision AS current_project_revision,
+                   b.revision AS current_story_bible_revision,
+                   pl.revision AS current_novel_plan_revision,
+                   a.revision AS current_story_arc_revision,
+                   a.volume_number AS current_volume_number,
+                   a.arc_number AS current_arc_number
+            FROM chapter_plans AS c
+            JOIN novel_projects AS p
+              ON p.novel_id = c.novel_id
+            JOIN story_bibles AS b
+              ON b.novel_id = c.novel_id
+            JOIN novel_plans AS pl
+              ON pl.novel_id = c.novel_id
+            JOIN story_arcs AS a
+              ON a.novel_id = c.novel_id
+             AND a.arc_id = c.arc_id
+            WHERE c.novel_id = ?
+              AND c.chapter_plan_id = ?
+            """,
+            (
+                novel_id,
+                chapter_plan_id,
+            ),
+        ).fetchone()
+
+    def _insert_chapter_plan_revision(
+        self,
+        conn: sqlite3.Connection,
+        plan: ChapterPlan,
+        created_at: str,
+    ) -> None:
+        snapshot = plan.model_copy(
+            update={"is_stale": False}
+        )
+
+        conn.execute(
+            """
+            INSERT INTO chapter_plan_revisions (
+                chapter_plan_id,
+                novel_id,
+                revision,
+                snapshot_json,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                snapshot.chapter_plan_id,
+                snapshot.novel_id,
+                snapshot.revision,
+                _json_dump(
+                    snapshot.model_dump()
+                ),
+                created_at,
+            ),
+        )
+
+    @staticmethod
+    def _chapter_plan_from_row(
+        row: sqlite3.Row,
+    ) -> ChapterPlan:
+        source_project_revision = int(
+            row["source_project_revision"]
+        )
+        source_story_bible_revision = int(
+            row["source_story_bible_revision"]
+        )
+        source_novel_plan_revision = int(
+            row["source_novel_plan_revision"]
+        )
+        source_story_arc_revision = int(
+            row["source_story_arc_revision"]
+        )
+
+        return ChapterPlan(
+            chapter_plan_id=row["chapter_plan_id"],
+            novel_id=row["novel_id"],
+            arc_id=row["arc_id"],
+            volume_number=int(
+                row["current_volume_number"]
+            ),
+            arc_number=int(
+                row["current_arc_number"]
+            ),
+            chapter_number=int(
+                row["chapter_number"]
+            ),
+            revision=int(row["revision"]),
+            source_project_revision=(
+                source_project_revision
+            ),
+            source_story_bible_revision=(
+                source_story_bible_revision
+            ),
+            source_novel_plan_revision=(
+                source_novel_plan_revision
+            ),
+            source_story_arc_revision=(
+                source_story_arc_revision
+            ),
+            is_stale=(
+                source_project_revision
+                != int(
+                    row["current_project_revision"]
+                )
+                or source_story_bible_revision
+                != int(
+                    row[
+                        "current_story_bible_revision"
+                    ]
+                )
+                or source_novel_plan_revision
+                != int(
+                    row["current_novel_plan_revision"]
+                )
+                or source_story_arc_revision
+                != int(
+                    row["current_story_arc_revision"]
+                )
+            ),
+            title=row["title"],
+            objective=row["objective"],
+            summary=row["summary"],
+            pov_character_id=row["pov_character_id"],
+            pov_character_name=row["pov_character_name"],
+            opening_state=row["opening_state"],
+            closing_state=row["closing_state"],
+            conflict=row["conflict"],
+            reveal=row["reveal"],
+            hook=row["hook"],
+            scene_beats=_json_load(
+                row["scene_beats_json"],
+                [],
+            ),
+            continuity_dependencies=_json_load(
+                row[
+                    "continuity_dependencies_json"
+                ],
+                [],
+            ),
+            target_word_count=int(
+                row["target_word_count"]
+            ),
+            metadata=_json_load(
+                row["metadata_json"],
+                {},
+            ),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _chapter_plan_revision_from_row(
+        row: sqlite3.Row,
+    ) -> ChapterPlanRevision:
+        snapshot = ChapterPlan.model_validate(
+            json.loads(row["snapshot_json"])
+        )
+
+        return ChapterPlanRevision(
+            chapter_plan_id=row["chapter_plan_id"],
             novel_id=row["novel_id"],
             revision=int(row["revision"]),
             snapshot=snapshot,

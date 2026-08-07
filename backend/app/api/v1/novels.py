@@ -8,6 +8,12 @@ from fastapi import (
 )
 
 from app.novels.schemas import (
+    ChapterPlanCreate,
+    ChapterPlanListResponse,
+    ChapterPlanResponse,
+    ChapterPlanRevisionListResponse,
+    ChapterPlanRevisionResponse,
+    ChapterPlanUpdate,
     NovelPlanResponse,
     NovelPlanRevisionListResponse,
     NovelPlanRevisionResponse,
@@ -393,3 +399,137 @@ async def get_story_arc_revision(
     except NovelProjectNotFoundError as exc:
         raise _not_found(exc) from exc
     return StoryArcRevisionResponse(data=item)
+
+@router.post(
+    "/{novel_id}/chapter-plans",
+    response_model=ChapterPlanResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_chapter_plan(
+    novel_id: str,
+    payload: ChapterPlanCreate,
+) -> ChapterPlanResponse:
+    try:
+        plan = service.create_chapter_plan(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return ChapterPlanResponse(data=plan)
+
+
+@router.get(
+    "/{novel_id}/chapter-plans",
+    response_model=ChapterPlanListResponse,
+)
+async def list_chapter_plans(
+    novel_id: str,
+    arc_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=128,
+    ),
+    volume_number: int | None = Query(
+        default=None,
+        ge=1,
+        le=10_000,
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> ChapterPlanListResponse:
+    try:
+        plans = service.list_chapter_plans(
+            novel_id,
+            arc_id=arc_id,
+            volume_number=volume_number,
+            limit=limit,
+            offset=offset,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return ChapterPlanListResponse(data=plans)
+
+
+@router.get(
+    "/{novel_id}/chapter-plans/{chapter_plan_id}",
+    response_model=ChapterPlanResponse,
+)
+async def get_chapter_plan(
+    novel_id: str,
+    chapter_plan_id: str,
+) -> ChapterPlanResponse:
+    try:
+        plan = service.get_chapter_plan(
+            novel_id,
+            chapter_plan_id,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return ChapterPlanResponse(data=plan)
+
+
+@router.put(
+    "/{novel_id}/chapter-plans/{chapter_plan_id}",
+    response_model=ChapterPlanResponse,
+)
+async def update_chapter_plan(
+    novel_id: str,
+    chapter_plan_id: str,
+    payload: ChapterPlanUpdate,
+) -> ChapterPlanResponse:
+    try:
+        plan = service.update_chapter_plan(
+            novel_id,
+            chapter_plan_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return ChapterPlanResponse(data=plan)
+
+
+@router.get(
+    "/{novel_id}/chapter-plans/{chapter_plan_id}/revisions",
+    response_model=ChapterPlanRevisionListResponse,
+)
+async def list_chapter_plan_revisions(
+    novel_id: str,
+    chapter_plan_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> ChapterPlanRevisionListResponse:
+    try:
+        revisions = service.list_chapter_plan_revisions(
+            novel_id,
+            chapter_plan_id,
+            limit=limit,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return ChapterPlanRevisionListResponse(
+        data=revisions
+    )
+
+
+@router.get(
+    "/{novel_id}/chapter-plans/{chapter_plan_id}/revisions/{revision}",
+    response_model=ChapterPlanRevisionResponse,
+)
+async def get_chapter_plan_revision(
+    novel_id: str,
+    chapter_plan_id: str,
+    revision: int,
+) -> ChapterPlanRevisionResponse:
+    try:
+        item = service.get_chapter_plan_revision(
+            novel_id,
+            chapter_plan_id,
+            revision,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return ChapterPlanRevisionResponse(data=item)

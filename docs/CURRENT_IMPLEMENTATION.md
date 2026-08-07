@@ -1891,3 +1891,55 @@ Arc revisions = [5, 4, 3, 2, 1]
 Story Arc SQLite persistence passed
 Backend restart persistence passed
 ```
+
+## v0.15.0-alpha.15 — Sprint 08A.4 Chapter Planning Foundation
+
+NovelForge 新增独立 Chapter Plan 规划层。
+
+新增：
+
+- Chapter Plan 独立领域实体
+- Story Arc binding
+- full-novel chapter ordering
+- chapter number uniqueness
+- Arc rebind
+- Scene Beats
+- POV / conflict / reveal / hook
+- continuity dependencies
+- target word count
+- Chapter Plan immutable revisions
+- optimistic revision conflict
+- Project source revision tracking
+- Story Bible source revision tracking
+- Novel Plan source revision tracking
+- Story Arc source revision tracking
+- four-source dynamic `is_stale`
+- Backend restart persistence
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/chapter-plans
+GET  /api/v1/novels/{novel_id}/chapter-plans
+GET  /api/v1/novels/{novel_id}/chapter-plans/{chapter_plan_id}
+PUT  /api/v1/novels/{novel_id}/chapter-plans/{chapter_plan_id}
+GET  /api/v1/novels/{novel_id}/chapter-plans/{chapter_plan_id}/revisions
+GET  /api/v1/novels/{novel_id}/chapter-plans/{chapter_plan_id}/revisions/{revision}
+```
+
+验收：
+
+```text
+206/206 full regression passed
+Chapter number conflicts -> HTTP 409
+Chapter revision conflict -> HTTP 409
+Arc rebind passed
+Project change -> Chapter stale
+Story Bible change -> Chapter stale
+Novel Plan change -> Chapter stale
+Story Arc change -> Chapter stale
+Final four-source revisions synchronized
+Chapter revisions = [6, 5, 4, 3, 2, 1]
+Chapter SQLite persistence passed
+Backend restart persistence passed
+```

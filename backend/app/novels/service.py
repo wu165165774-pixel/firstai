@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from .schemas import (
+    ChapterPlan,
+    ChapterPlanCreate,
+    ChapterPlanRevision,
+    ChapterPlanUpdate,
     NovelPlan,
     NovelPlanRevision,
     NovelPlanUpdate,
@@ -205,5 +209,79 @@ class NovelProjectService:
         return self.storage.get_story_arc_revision(
             novel_id,
             arc_id,
+            revision,
+        )
+
+    def create_chapter_plan(
+        self,
+        novel_id: str,
+        payload: ChapterPlanCreate,
+    ) -> ChapterPlan:
+        return self.storage.create_chapter_plan(
+            novel_id,
+            payload,
+        )
+
+    def list_chapter_plans(
+        self,
+        novel_id: str,
+        *,
+        arc_id: str | None = None,
+        volume_number: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[ChapterPlan]:
+        return self.storage.list_chapter_plans(
+            novel_id,
+            arc_id=arc_id,
+            volume_number=volume_number,
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_chapter_plan(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+    ) -> ChapterPlan:
+        return self.storage.get_chapter_plan(
+            novel_id,
+            chapter_plan_id,
+        )
+
+    def update_chapter_plan(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+        payload: ChapterPlanUpdate,
+    ) -> ChapterPlan:
+        return self.storage.update_chapter_plan(
+            novel_id,
+            chapter_plan_id,
+            payload,
+        )
+
+    def list_chapter_plan_revisions(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[ChapterPlanRevision]:
+        return self.storage.list_chapter_plan_revisions(
+            novel_id,
+            chapter_plan_id,
+            limit=limit,
+        )
+
+    def get_chapter_plan_revision(
+        self,
+        novel_id: str,
+        chapter_plan_id: str,
+        revision: int,
+    ) -> ChapterPlanRevision:
+        return self.storage.get_chapter_plan_revision(
+            novel_id,
+            chapter_plan_id,
             revision,
         )

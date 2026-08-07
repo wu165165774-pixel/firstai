@@ -264,6 +264,95 @@ class StoryArcRevision(BaseModel):
     created_at: str
 
 
+class ChapterPlanSceneBeat(BaseModel):
+    beat_id: str = Field(min_length=1, max_length=128)
+    order: int = Field(ge=1, le=100_000)
+    title: str = Field(min_length=1, max_length=256)
+    summary: str = Field(default="", max_length=8000)
+    purpose: str = Field(default="", max_length=4000)
+    character_ids: list[str] = Field(default_factory=list)
+    location_id: str | None = Field(default=None, max_length=128)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChapterPlanCreate(BaseModel):
+    arc_id: str = Field(min_length=1, max_length=128)
+    chapter_number: int = Field(ge=1, le=1_000_000)
+    title: str = Field(min_length=1, max_length=256)
+    objective: str = Field(default="", max_length=8000)
+    summary: str = Field(default="", max_length=12000)
+    pov_character_id: str | None = Field(default=None, max_length=128)
+    pov_character_name: str = Field(default="", max_length=256)
+    opening_state: str = Field(default="", max_length=8000)
+    closing_state: str = Field(default="", max_length=8000)
+    conflict: str = Field(default="", max_length=12000)
+    reveal: str = Field(default="", max_length=8000)
+    hook: str = Field(default="", max_length=8000)
+    scene_beats: list[ChapterPlanSceneBeat] = Field(default_factory=list)
+    continuity_dependencies: list[str] = Field(default_factory=list)
+    target_word_count: int = Field(default=0, ge=0, le=1_000_000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChapterPlanUpdate(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=1)
+    arc_id: str | None = Field(default=None, min_length=1, max_length=128)
+    chapter_number: int | None = Field(default=None, ge=1, le=1_000_000)
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    objective: str | None = Field(default=None, max_length=8000)
+    summary: str | None = Field(default=None, max_length=12000)
+    pov_character_id: str | None = Field(default=None, max_length=128)
+    pov_character_name: str | None = Field(default=None, max_length=256)
+    opening_state: str | None = Field(default=None, max_length=8000)
+    closing_state: str | None = Field(default=None, max_length=8000)
+    conflict: str | None = Field(default=None, max_length=12000)
+    reveal: str | None = Field(default=None, max_length=8000)
+    hook: str | None = Field(default=None, max_length=8000)
+    scene_beats: list[ChapterPlanSceneBeat] | None = None
+    continuity_dependencies: list[str] | None = None
+    target_word_count: int | None = Field(default=None, ge=0, le=1_000_000)
+    metadata: dict[str, Any] | None = None
+
+
+class ChapterPlan(BaseModel):
+    chapter_plan_id: str
+    novel_id: str
+    arc_id: str
+    volume_number: int
+    arc_number: int
+    chapter_number: int
+    revision: int
+    source_project_revision: int
+    source_story_bible_revision: int
+    source_novel_plan_revision: int
+    source_story_arc_revision: int
+    is_stale: bool = False
+    title: str
+    objective: str = ""
+    summary: str = ""
+    pov_character_id: str | None = None
+    pov_character_name: str = ""
+    opening_state: str = ""
+    closing_state: str = ""
+    conflict: str = ""
+    reveal: str = ""
+    hook: str = ""
+    scene_beats: list[ChapterPlanSceneBeat] = Field(default_factory=list)
+    continuity_dependencies: list[str] = Field(default_factory=list)
+    target_word_count: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class ChapterPlanRevision(BaseModel):
+    chapter_plan_id: str
+    novel_id: str
+    revision: int
+    snapshot: ChapterPlan
+    created_at: str
+
+
 class NovelProjectResponse(BaseModel):
     code: int = 0
     message: str = "success"
@@ -333,3 +422,26 @@ class StoryArcRevisionListResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: list[StoryArcRevision] = Field(default_factory=list)
+
+class ChapterPlanResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: ChapterPlan
+
+
+class ChapterPlanListResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: list[ChapterPlan] = Field(default_factory=list)
+
+
+class ChapterPlanRevisionResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: ChapterPlanRevision
+
+
+class ChapterPlanRevisionListResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: list[ChapterPlanRevision] = Field(default_factory=list)
