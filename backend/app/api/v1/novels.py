@@ -8,6 +8,10 @@ from fastapi import (
 )
 
 from app.novels.schemas import (
+    NovelPlanResponse,
+    NovelPlanRevisionListResponse,
+    NovelPlanRevisionResponse,
+    NovelPlanUpdate,
     NovelProjectCreate,
     NovelProjectListResponse,
     NovelProjectResponse,
@@ -184,3 +188,74 @@ async def get_story_bible_revision(
     except NovelProjectNotFoundError as exc:
         raise _not_found(exc) from exc
     return StoryBibleRevisionResponse(data=item)
+
+@router.get(
+    "/{novel_id}/plan",
+    response_model=NovelPlanResponse,
+)
+async def get_novel_plan(
+    novel_id: str,
+) -> NovelPlanResponse:
+    try:
+        plan = service.get_novel_plan(novel_id)
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return NovelPlanResponse(data=plan)
+
+
+@router.put(
+    "/{novel_id}/plan",
+    response_model=NovelPlanResponse,
+)
+async def update_novel_plan(
+    novel_id: str,
+    payload: NovelPlanUpdate,
+) -> NovelPlanResponse:
+    try:
+        plan = service.update_novel_plan(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return NovelPlanResponse(data=plan)
+
+
+@router.get(
+    "/{novel_id}/plan/revisions",
+    response_model=NovelPlanRevisionListResponse,
+)
+async def list_novel_plan_revisions(
+    novel_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> NovelPlanRevisionListResponse:
+    try:
+        revisions = service.list_novel_plan_revisions(
+            novel_id,
+            limit=limit,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return NovelPlanRevisionListResponse(
+        data=revisions
+    )
+
+
+@router.get(
+    "/{novel_id}/plan/revisions/{revision}",
+    response_model=NovelPlanRevisionResponse,
+)
+async def get_novel_plan_revision(
+    novel_id: str,
+    revision: int,
+) -> NovelPlanRevisionResponse:
+    try:
+        item = service.get_novel_plan_revision(
+            novel_id,
+            revision,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return NovelPlanRevisionResponse(data=item)

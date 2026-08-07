@@ -1805,3 +1805,43 @@ Story Bible revisions = [3, 2, 1]
 novels.db domain isolation passed
 Backend restart persistence passed
 ```
+
+## v0.15.0-alpha.13 — Sprint 08A.2 Novel Planner Foundation
+
+NovelForge 新增总体小说规划层。
+
+新增：
+
+- Novel Plan
+- Main Plot Beats
+- Character Arcs
+- Volume Plans
+- Novel Plan immutable revisions
+- optimistic revision conflict
+- Project revision source tracking
+- Story Bible revision source tracking
+- dynamic `is_stale`
+- existing Novel Project Plan backfill
+- Backend restart persistence
+
+新增 API：
+
+```text
+GET /api/v1/novels/{novel_id}/plan
+PUT /api/v1/novels/{novel_id}/plan
+GET /api/v1/novels/{novel_id}/plan/revisions
+GET /api/v1/novels/{novel_id}/plan/revisions/{revision}
+```
+
+验收：
+
+```text
+168/168 full regression passed
+Plan revision conflict -> HTTP 409
+Project change -> Plan stale
+Story Bible change -> Plan stale
+Plan refresh -> source revisions synchronized
+Plan revisions = [4, 3, 2, 1]
+Planner SQLite persistence passed
+Backend restart persistence passed
+```

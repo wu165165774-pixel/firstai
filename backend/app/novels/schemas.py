@@ -91,6 +91,84 @@ class StoryBibleRevision(BaseModel):
     created_at: str
 
 
+class NovelPlanPlotBeat(BaseModel):
+    beat_id: str = Field(min_length=1, max_length=128)
+    order: int = Field(ge=1, le=100_000)
+    title: str = Field(min_length=1, max_length=256)
+    summary: str = Field(default="", max_length=8000)
+    purpose: str = Field(default="", max_length=4000)
+    character_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NovelPlanCharacterArc(BaseModel):
+    character_id: str = Field(min_length=1, max_length=128)
+    character_name: str = Field(default="", max_length=256)
+    role: str = Field(default="", max_length=128)
+    start_state: str = Field(default="", max_length=8000)
+    desire: str = Field(default="", max_length=4000)
+    need: str = Field(default="", max_length=4000)
+    internal_conflict: str = Field(default="", max_length=8000)
+    external_conflict: str = Field(default="", max_length=8000)
+    midpoint_shift: str = Field(default="", max_length=8000)
+    end_state: str = Field(default="", max_length=8000)
+    key_turning_points: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NovelPlanVolume(BaseModel):
+    volume_number: int = Field(ge=1, le=10_000)
+    title: str = Field(default="", max_length=256)
+    purpose: str = Field(default="", max_length=8000)
+    start_state: str = Field(default="", max_length=8000)
+    end_state: str = Field(default="", max_length=8000)
+    core_conflict: str = Field(default="", max_length=8000)
+    climax: str = Field(default="", max_length=8000)
+    target_word_count: int = Field(default=0, ge=0, le=100_000_000)
+    major_events: list[str] = Field(default_factory=list)
+    character_focus: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NovelPlanUpdate(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=1)
+    story_premise: str | None = Field(default=None, max_length=12000)
+    core_conflict: str | None = Field(default=None, max_length=12000)
+    central_question: str | None = Field(default=None, max_length=8000)
+    ending_direction: str | None = Field(default=None, max_length=12000)
+    themes: list[str] | None = None
+    main_plot: list[NovelPlanPlotBeat] | None = None
+    character_arcs: list[NovelPlanCharacterArc] | None = None
+    volume_plans: list[NovelPlanVolume] | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class NovelPlan(BaseModel):
+    novel_id: str
+    revision: int
+    source_project_revision: int
+    source_story_bible_revision: int
+    is_stale: bool = False
+    story_premise: str = ""
+    core_conflict: str = ""
+    central_question: str = ""
+    ending_direction: str = ""
+    themes: list[str] = Field(default_factory=list)
+    main_plot: list[NovelPlanPlotBeat] = Field(default_factory=list)
+    character_arcs: list[NovelPlanCharacterArc] = Field(default_factory=list)
+    volume_plans: list[NovelPlanVolume] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class NovelPlanRevision(BaseModel):
+    novel_id: str
+    revision: int
+    snapshot: NovelPlan
+    created_at: str
+
+
 class NovelProjectResponse(BaseModel):
     code: int = 0
     message: str = "success"
@@ -119,3 +197,21 @@ class StoryBibleRevisionListResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: list[StoryBibleRevision] = Field(default_factory=list)
+
+
+class NovelPlanResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: NovelPlan
+
+
+class NovelPlanRevisionResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: NovelPlanRevision
+
+
+class NovelPlanRevisionListResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: list[NovelPlanRevision] = Field(default_factory=list)

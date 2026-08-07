@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from .schemas import (
+    NovelPlan,
+    NovelPlanRevision,
+    NovelPlanUpdate,
     NovelProject,
     NovelProjectCreate,
     NovelProjectUpdate,
@@ -134,8 +137,44 @@ class NovelProjectStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_story_bible_revisions_time
                 ON story_bible_revisions(novel_id, revision DESC);
+
+                CREATE TABLE IF NOT EXISTS novel_plans (
+                    novel_id TEXT PRIMARY KEY,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    source_project_revision INTEGER NOT NULL,
+                    source_story_bible_revision INTEGER NOT NULL,
+                    story_premise TEXT NOT NULL DEFAULT '',
+                    core_conflict TEXT NOT NULL DEFAULT '',
+                    central_question TEXT NOT NULL DEFAULT '',
+                    ending_direction TEXT NOT NULL DEFAULT '',
+                    themes_json TEXT NOT NULL DEFAULT '[]',
+                    main_plot_json TEXT NOT NULL DEFAULT '[]',
+                    character_arcs_json TEXT NOT NULL DEFAULT '[]',
+                    volume_plans_json TEXT NOT NULL DEFAULT '[]',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(novel_id)
+                        REFERENCES novel_projects(novel_id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS novel_plan_revisions (
+                    novel_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(novel_id, revision),
+                    FOREIGN KEY(novel_id)
+                        REFERENCES novel_projects(novel_id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_novel_plan_revisions_time
+                ON novel_plan_revisions(novel_id, revision DESC);
                 """
             )
+            self._backfill_novel_plans(conn)
             conn.commit()
 
     def create_project(
@@ -201,6 +240,44 @@ class NovelProjectStorage:
             self._insert_story_bible_revision(
                 conn,
                 bible,
+                now,
+            )
+            conn.execute(
+                """
+                INSERT INTO novel_plans (
+                    novel_id,
+                    revision,
+                    source_project_revision,
+                    source_story_bible_revision,
+                    story_premise,
+                    created_at,
+                    updated_at
+                ) VALUES (?, 1, 1, 1, ?, ?, ?)
+                """,
+                (
+                    novel_id,
+                    payload.premise,
+                    now,
+                    now,
+                ),
+            )
+            plan_row = conn.execute(
+                """
+                SELECT pl.*,
+                       p.revision AS current_project_revision,
+                       b.revision AS current_story_bible_revision
+                FROM novel_plans AS pl
+                JOIN novel_projects AS p
+                  ON p.novel_id = pl.novel_id
+                JOIN story_bibles AS b
+                  ON b.novel_id = pl.novel_id
+                WHERE pl.novel_id = ?
+                """,
+                (novel_id,),
+            ).fetchone()
+            self._insert_novel_plan_revision(
+                conn,
+                self._novel_plan_from_row(plan_row),
                 now,
             )
             conn.commit()
@@ -539,6 +616,310 @@ class NovelProjectStorage:
             )
         return self._revision_from_row(row)
 
+    def get_novel_plan(
+        self,
+        novel_id: str,
+    ) -> NovelPlan:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT pl.*,
+                       p.revision AS current_project_revision,
+                       b.revision AS current_story_bible_revision
+                FROM novel_plans AS pl
+                JOIN novel_projects AS p
+                  ON p.novel_id = pl.novel_id
+                JOIN story_bibles AS b
+                  ON b.novel_id = pl.novel_id
+                WHERE pl.novel_id = ?
+                """,
+                (novel_id,),
+            ).fetchone()
+
+        if row is None:
+            if not self._project_exists(novel_id):
+                raise NovelProjectNotFoundError(novel_id)
+            raise RuntimeError(
+                f"Novel Plan is missing for novel {novel_id}"
+            )
+        return self._novel_plan_from_row(row)
+
+    def update_novel_plan(
+        self,
+        novel_id: str,
+        payload: NovelPlanUpdate,
+    ) -> NovelPlan:
+        updates = payload.model_dump(
+            exclude_unset=True,
+        )
+        expected_revision = updates.pop(
+            "expected_revision",
+            None,
+        )
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT pl.*,
+                       p.revision AS current_project_revision,
+                       b.revision AS current_story_bible_revision
+                FROM novel_plans AS pl
+                JOIN novel_projects AS p
+                  ON p.novel_id = pl.novel_id
+                JOIN story_bibles AS b
+                  ON b.novel_id = pl.novel_id
+                WHERE pl.novel_id = ?
+                """,
+                (novel_id,),
+            ).fetchone()
+
+            if row is None:
+                project = conn.execute(
+                    "SELECT novel_id FROM novel_projects WHERE novel_id = ?",
+                    (novel_id,),
+                ).fetchone()
+                if project is None:
+                    raise NovelProjectNotFoundError(novel_id)
+                raise RuntimeError(
+                    f"Novel Plan is missing for novel {novel_id}"
+                )
+
+            current_revision = int(row["revision"])
+            if (
+                expected_revision is not None
+                and expected_revision != current_revision
+            ):
+                raise NovelRevisionConflictError(
+                    f"Novel Plan revision conflict: "
+                    f"expected={expected_revision}, "
+                    f"actual={current_revision}"
+                )
+
+            if not updates:
+                conn.commit()
+                return self._novel_plan_from_row(row)
+
+            column_map = {
+                "story_premise": "story_premise",
+                "core_conflict": "core_conflict",
+                "central_question": "central_question",
+                "ending_direction": "ending_direction",
+                "themes": "themes_json",
+                "main_plot": "main_plot_json",
+                "character_arcs": "character_arcs_json",
+                "volume_plans": "volume_plans_json",
+                "metadata": "metadata_json",
+            }
+            json_fields = {
+                "themes",
+                "main_plot",
+                "character_arcs",
+                "volume_plans",
+                "metadata",
+            }
+            assignments: list[str] = []
+            values: list[Any] = []
+
+            for field, value in updates.items():
+                assignments.append(
+                    f"{column_map[field]} = ?"
+                )
+                if field in json_fields:
+                    if isinstance(value, list):
+                        value = [
+                            item.model_dump()
+                            if hasattr(item, "model_dump")
+                            else item
+                            for item in value
+                        ]
+                    value = _json_dump(value)
+                values.append(value)
+
+            now = _utc_now()
+            current_project_revision = int(
+                row["current_project_revision"]
+            )
+            current_story_bible_revision = int(
+                row["current_story_bible_revision"]
+            )
+            assignments.extend([
+                "source_project_revision = ?",
+                "source_story_bible_revision = ?",
+                "revision = revision + 1",
+                "updated_at = ?",
+            ])
+            values.extend([
+                current_project_revision,
+                current_story_bible_revision,
+                now,
+                novel_id,
+            ])
+
+            conn.execute(
+                f"""
+                UPDATE novel_plans
+                SET {', '.join(assignments)}
+                WHERE novel_id = ?
+                """,
+                tuple(values),
+            )
+            updated_row = conn.execute(
+                """
+                SELECT pl.*,
+                       p.revision AS current_project_revision,
+                       b.revision AS current_story_bible_revision
+                FROM novel_plans AS pl
+                JOIN novel_projects AS p
+                  ON p.novel_id = pl.novel_id
+                JOIN story_bibles AS b
+                  ON b.novel_id = pl.novel_id
+                WHERE pl.novel_id = ?
+                """,
+                (novel_id,),
+            ).fetchone()
+            plan = self._novel_plan_from_row(
+                updated_row
+            )
+            self._insert_novel_plan_revision(
+                conn,
+                plan,
+                now,
+            )
+            conn.execute(
+                """
+                UPDATE novel_projects
+                SET updated_at = ?
+                WHERE novel_id = ?
+                """,
+                (now, novel_id),
+            )
+            conn.commit()
+
+        return plan
+
+    def list_novel_plan_revisions(
+        self,
+        novel_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[NovelPlanRevision]:
+        if not self._project_exists(novel_id):
+            raise NovelProjectNotFoundError(novel_id)
+
+        normalized_limit = min(max(int(limit), 1), 500)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT novel_id,
+                       revision,
+                       snapshot_json,
+                       created_at
+                FROM novel_plan_revisions
+                WHERE novel_id = ?
+                ORDER BY revision DESC
+                LIMIT ?
+                """,
+                (novel_id, normalized_limit),
+            ).fetchall()
+
+        return [
+            self._plan_revision_from_row(row)
+            for row in rows
+        ]
+
+    def get_novel_plan_revision(
+        self,
+        novel_id: str,
+        revision: int,
+    ) -> NovelPlanRevision:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT novel_id,
+                       revision,
+                       snapshot_json,
+                       created_at
+                FROM novel_plan_revisions
+                WHERE novel_id = ?
+                  AND revision = ?
+                """,
+                (novel_id, int(revision)),
+            ).fetchone()
+
+        if row is None:
+            if not self._project_exists(novel_id):
+                raise NovelProjectNotFoundError(novel_id)
+            raise NovelProjectNotFoundError(
+                f"{novel_id}:novel-plan:{revision}"
+            )
+        return self._plan_revision_from_row(row)
+
+    def _backfill_novel_plans(
+        self,
+        conn: sqlite3.Connection,
+    ) -> None:
+        rows = conn.execute(
+            """
+            SELECT p.novel_id,
+                   p.premise,
+                   p.revision AS project_revision,
+                   b.revision AS story_bible_revision
+            FROM novel_projects AS p
+            JOIN story_bibles AS b
+              ON b.novel_id = p.novel_id
+            LEFT JOIN novel_plans AS pl
+              ON pl.novel_id = p.novel_id
+            WHERE pl.novel_id IS NULL
+            ORDER BY p.novel_id ASC
+            """
+        ).fetchall()
+
+        for row in rows:
+            now = _utc_now()
+            conn.execute(
+                """
+                INSERT INTO novel_plans (
+                    novel_id,
+                    revision,
+                    source_project_revision,
+                    source_story_bible_revision,
+                    story_premise,
+                    created_at,
+                    updated_at
+                ) VALUES (?, 1, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["novel_id"],
+                    int(row["project_revision"]),
+                    int(row["story_bible_revision"]),
+                    row["premise"],
+                    now,
+                    now,
+                ),
+            )
+            plan_row = conn.execute(
+                """
+                SELECT pl.*,
+                       p.revision AS current_project_revision,
+                       b.revision AS current_story_bible_revision
+                FROM novel_plans AS pl
+                JOIN novel_projects AS p
+                  ON p.novel_id = pl.novel_id
+                JOIN story_bibles AS b
+                  ON b.novel_id = pl.novel_id
+                WHERE pl.novel_id = ?
+                """,
+                (row["novel_id"],),
+            ).fetchone()
+            self._insert_novel_plan_revision(
+                conn,
+                self._novel_plan_from_row(
+                    plan_row
+                ),
+                now,
+            )
+
     def _project_exists(self, novel_id: str) -> bool:
         with self._connect() as conn:
             row = conn.execute(
@@ -568,6 +949,107 @@ class NovelProjectStorage:
                 _json_dump(bible.model_dump()),
                 created_at,
             ),
+        )
+
+    def _insert_novel_plan_revision(
+        self,
+        conn: sqlite3.Connection,
+        plan: NovelPlan,
+        created_at: str,
+    ) -> None:
+        snapshot = plan.model_copy(
+            update={"is_stale": False}
+        )
+        conn.execute(
+            """
+            INSERT INTO novel_plan_revisions (
+                novel_id,
+                revision,
+                snapshot_json,
+                created_at
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                snapshot.novel_id,
+                snapshot.revision,
+                _json_dump(
+                    snapshot.model_dump()
+                ),
+                created_at,
+            ),
+        )
+
+    @staticmethod
+    def _novel_plan_from_row(
+        row: sqlite3.Row,
+    ) -> NovelPlan:
+        current_project_revision = int(
+            row["current_project_revision"]
+        )
+        current_story_bible_revision = int(
+            row["current_story_bible_revision"]
+        )
+        source_project_revision = int(
+            row["source_project_revision"]
+        )
+        source_story_bible_revision = int(
+            row["source_story_bible_revision"]
+        )
+        return NovelPlan(
+            novel_id=row["novel_id"],
+            revision=int(row["revision"]),
+            source_project_revision=(
+                source_project_revision
+            ),
+            source_story_bible_revision=(
+                source_story_bible_revision
+            ),
+            is_stale=(
+                source_project_revision
+                != current_project_revision
+                or source_story_bible_revision
+                != current_story_bible_revision
+            ),
+            story_premise=row["story_premise"],
+            core_conflict=row["core_conflict"],
+            central_question=row["central_question"],
+            ending_direction=row["ending_direction"],
+            themes=_json_load(
+                row["themes_json"],
+                [],
+            ),
+            main_plot=_json_load(
+                row["main_plot_json"],
+                [],
+            ),
+            character_arcs=_json_load(
+                row["character_arcs_json"],
+                [],
+            ),
+            volume_plans=_json_load(
+                row["volume_plans_json"],
+                [],
+            ),
+            metadata=_json_load(
+                row["metadata_json"],
+                {},
+            ),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _plan_revision_from_row(
+        row: sqlite3.Row,
+    ) -> NovelPlanRevision:
+        snapshot = NovelPlan.model_validate(
+            json.loads(row["snapshot_json"])
+        )
+        return NovelPlanRevision(
+            novel_id=row["novel_id"],
+            revision=int(row["revision"]),
+            snapshot=snapshot,
+            created_at=row["created_at"],
         )
 
     @staticmethod
