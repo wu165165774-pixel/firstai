@@ -13,6 +13,7 @@ from app.agents.bootstrap import (
     agent_manager as bootstrap_agent_manager,
 )
 
+from fastapi.responses import PlainTextResponse
 from app.workflows.async_executor import (
     AsyncWorkflowExecutor,
 )
@@ -44,6 +45,14 @@ from app.workflows.run_schemas import (
     WorkflowQueueArchiveRequest,
     WorkflowQueueArchiveResponse,
     WorkflowWorkerClusterHealthResponse,
+)
+from app.workflows.run_schemas import (
+    WorkflowOperationAuditListResponse,
+    WorkflowOperationsDashboardResponse,
+    WorkflowWorkerBatchControlRequest,
+    WorkflowWorkerBatchControlResponse,
+    WorkflowWorkerHistoryCleanupRequest,
+    WorkflowWorkerHistoryCleanupResponse,
 )
 from app.workflows.schemas import (
     ChapterWorkflowRequest,
@@ -789,3 +798,209 @@ async def get_workflow_worker_cluster_health(
         stale_after_seconds=stale_after_seconds
     )
     return WorkflowWorkerClusterHealthResponse(data=health)
+
+@router.post(
+    "/workers/control/batch",
+    response_model=(
+        WorkflowWorkerBatchControlResponse
+    ),
+)
+async def control_workflow_workers_batch(
+    payload: WorkflowWorkerBatchControlRequest,
+    request: Request,
+) -> WorkflowWorkerBatchControlResponse:
+
+    executor = _async_executor(request)
+
+    try:
+        result = (
+            executor
+            .queue
+            .bulk_set_worker_control(
+                payload.worker_ids,
+                action=payload.action,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowWorkerBatchControlResponse(
+        data=result
+    )
+
+
+@router.post(
+    "/workers/history/cleanup",
+    response_model=(
+        WorkflowWorkerHistoryCleanupResponse
+    ),
+)
+async def cleanup_workflow_worker_history(
+    payload: WorkflowWorkerHistoryCleanupRequest,
+    request: Request,
+) -> WorkflowWorkerHistoryCleanupResponse:
+
+    executor = _async_executor(request)
+
+    try:
+        result = (
+            executor
+            .queue
+            .cleanup_worker_history(
+                older_than_seconds=(
+                    payload
+                    .older_than_seconds
+                ),
+                stale_after_seconds=(
+                    payload
+                    .stale_after_seconds
+                ),
+                include_stale_running=(
+                    payload
+                    .include_stale_running
+                ),
+                limit=payload.limit,
+                dry_run=payload.dry_run,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=(
+                status
+                .HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return (
+        WorkflowWorkerHistoryCleanupResponse(
+            data=result
+        )
+    )
+
+
+@router.get(
+    "/operations/audit",
+    response_model=(
+        WorkflowOperationAuditListResponse
+    ),
+)
+async def list_workflow_operation_audit(
+    request: Request,
+    limit: int = Query(
+        default=100,
+        ge=1,
+        le=500,
+    ),
+    operation_type: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=64,
+    ),
+) -> WorkflowOperationAuditListResponse:
+
+    executor = _async_executor(request)
+
+    entries = (
+        executor
+        .queue
+        .list_operation_audit(
+            limit=limit,
+            operation_type=(
+                operation_type
+            ),
+        )
+    )
+
+    return WorkflowOperationAuditListResponse(
+        data=entries
+    )
+
+
+@router.get(
+    "/operations/dashboard",
+    response_model=(
+        WorkflowOperationsDashboardResponse
+    ),
+)
+async def get_workflow_operations_dashboard(
+    request: Request,
+    window_seconds: float = Query(
+        default=300.0,
+        ge=1.0,
+        le=86400.0,
+    ),
+    stale_after_seconds: float = Query(
+        default=90.0,
+        ge=1.0,
+        le=3600.0,
+    ),
+    audit_limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+    ),
+) -> WorkflowOperationsDashboardResponse:
+
+    executor = _async_executor(request)
+
+    dashboard = (
+        executor
+        .queue
+        .operations_dashboard(
+            window_seconds=window_seconds,
+            stale_after_seconds=(
+                stale_after_seconds
+            ),
+            audit_limit=audit_limit,
+        )
+    )
+
+    return WorkflowOperationsDashboardResponse(
+        data=dashboard
+    )
+
+
+@router.get(
+    "/metrics/prometheus",
+    response_class=PlainTextResponse,
+)
+async def get_workflow_prometheus_metrics(
+    request: Request,
+    window_seconds: float = Query(
+        default=300.0,
+        ge=1.0,
+        le=86400.0,
+    ),
+    stale_after_seconds: float = Query(
+        default=90.0,
+        ge=1.0,
+        le=3600.0,
+    ),
+) -> PlainTextResponse:
+
+    executor = _async_executor(request)
+
+    content = (
+        executor
+        .queue
+        .prometheus_metrics(
+            window_seconds=window_seconds,
+            stale_after_seconds=(
+                stale_after_seconds
+            ),
+        )
+    )
+
+    return PlainTextResponse(
+        content=content,
+        media_type=(
+            "text/plain; version=0.0.4"
+        ),
+    )

@@ -1728,3 +1728,40 @@ running_workers = 1
 accepting_workers = 1
 stale_workers = 2
 ```
+
+## v0.15.0-alpha.11 — Sprint 07D.10 Operations Dashboard and Infrastructure Finalization
+
+07D Workflow Infrastructure 正式收尾。
+
+新增：
+
+- Worker 批量 pause / resume / drain
+- Worker 历史安全清理与 dry-run
+- 运维操作审计
+- Queue/Worker 告警阈值
+- Operations Dashboard 聚合 API
+- Prometheus exposition endpoint
+
+新增 API：
+
+```text
+POST /api/v1/workflows/workers/control/batch
+POST /api/v1/workflows/workers/history/cleanup
+GET  /api/v1/workflows/operations/audit
+GET  /api/v1/workflows/operations/dashboard
+GET  /api/v1/workflows/metrics/prometheus
+```
+
+验收：
+
+```text
+136/136 full regression passed
+batch worker pause/resume passed
+worker history cleanup passed
+operations audit passed
+dashboard aggregation passed
+prometheus live metrics passed
+worker health healthy
+```
+
+最终 Dashboard 可保持 `warning`，例如历史 DLQ backlog 达到阈值；这与 Worker 集群健康状态独立。

@@ -662,3 +662,146 @@ class WorkflowWorkerClusterHealthResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: WorkflowWorkerClusterHealth
+
+class WorkflowWorkerBatchControlRequest(BaseModel):
+
+    model_config = ConfigDict(extra="forbid")
+
+    worker_ids: list[str] = Field(
+        min_length=1,
+        max_length=100,
+    )
+    action: Literal[
+        "pause",
+        "resume",
+        "drain",
+    ]
+
+
+class WorkflowWorkerBatchControlSkipped(BaseModel):
+
+    worker_id: str
+    reason: str
+
+
+class WorkflowWorkerBatchControlResult(BaseModel):
+
+    requested_count: int = Field(ge=0)
+    succeeded_count: int = Field(ge=0)
+    skipped_count: int = Field(ge=0)
+    workers: list[WorkflowWorkerInfo] = Field(
+        default_factory=list
+    )
+    skipped: list[
+        WorkflowWorkerBatchControlSkipped
+    ] = Field(default_factory=list)
+
+
+class WorkflowWorkerBatchControlResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: WorkflowWorkerBatchControlResult
+
+
+class WorkflowWorkerHistoryCleanupRequest(BaseModel):
+
+    model_config = ConfigDict(extra="forbid")
+
+    older_than_seconds: float = Field(
+        default=604800.0,
+        ge=0.0,
+        le=315360000.0,
+    )
+    stale_after_seconds: float = Field(
+        default=90.0,
+        ge=1.0,
+        le=86400.0,
+    )
+    include_stale_running: bool = True
+    limit: int = Field(
+        default=500,
+        ge=1,
+        le=5000,
+    )
+    dry_run: bool = True
+
+
+class WorkflowWorkerHistoryCleanupResult(BaseModel):
+
+    dry_run: bool
+    candidate_count: int = Field(ge=0)
+    deleted_count: int = Field(ge=0)
+    worker_ids: list[str] = Field(
+        default_factory=list
+    )
+
+
+class WorkflowWorkerHistoryCleanupResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: WorkflowWorkerHistoryCleanupResult
+
+
+class WorkflowOperationAuditEntry(BaseModel):
+
+    audit_id: str
+    operation_type: str
+    target_type: str
+    target_id: str | None = None
+    action: str
+    status: str
+    created_at: str
+    details: dict[str, Any] = Field(
+        default_factory=dict
+    )
+
+
+class WorkflowOperationAuditListResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: list[
+        WorkflowOperationAuditEntry
+    ] = Field(default_factory=list)
+
+
+class WorkflowOperationalAlert(BaseModel):
+
+    code: str
+    severity: Literal[
+        "warning",
+        "critical",
+    ]
+    message: str
+    value: Any = None
+    threshold: Any = None
+
+
+class WorkflowOperationsDashboard(BaseModel):
+
+    generated_at: str
+    alert_status: Literal[
+        "ok",
+        "warning",
+        "critical",
+    ]
+    alerts: list[
+        WorkflowOperationalAlert
+    ] = Field(default_factory=list)
+    thresholds: dict[str, Any] = Field(
+        default_factory=dict
+    )
+    queue: WorkflowQueueMetrics
+    workers: WorkflowWorkerClusterHealth
+    recent_audit: list[
+        WorkflowOperationAuditEntry
+    ] = Field(default_factory=list)
+
+
+class WorkflowOperationsDashboardResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: WorkflowOperationsDashboard

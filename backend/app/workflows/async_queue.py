@@ -3913,3 +3913,1282 @@ class WorkflowAsyncQueue:
         )
 
         return metrics
+
+    _init_db_d10_base = _init_db
+    _set_worker_control_d10_base = set_worker_control
+    _replay_dead_letters_d10_base = replay_dead_letters
+    _archive_terminal_jobs_d10_base = archive_terminal_jobs
+
+    def _init_db(
+        self,
+    ) -> None:
+
+        self._init_db_d10_base()
+
+        with self._connect() as conn:
+
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS
+                workflow_operations_audit (
+                    audit_id TEXT PRIMARY KEY,
+                    operation_type TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT,
+                    action TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    details_json TEXT NOT NULL
+                        DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                idx_workflow_operations_audit_time
+                ON workflow_operations_audit(
+                    created_at DESC
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                idx_workflow_operations_audit_type
+                ON workflow_operations_audit(
+                    operation_type,
+                    created_at DESC
+                );
+                """
+            )
+
+            conn.commit()
+
+    def _record_operation_audit(
+        self,
+        *,
+        operation_type: str,
+        target_type: str,
+        action: str,
+        status: str,
+        target_id: str | None = None,
+        details: dict[str, Any]
+        | None = None,
+    ) -> dict[str, Any]:
+
+        entry = {
+            "audit_id": str(uuid.uuid4()),
+            "operation_type": (
+                str(operation_type).strip()
+            ),
+            "target_type": (
+                str(target_type).strip()
+            ),
+            "target_id": (
+                str(target_id)
+                if target_id is not None
+                else None
+            ),
+            "action": str(action).strip(),
+            "status": str(status).strip(),
+            "created_at": _utc_now(),
+            "details": details or {},
+        }
+
+        with self._connect() as conn:
+
+            conn.execute(
+                """
+                INSERT INTO workflow_operations_audit (
+                    audit_id,
+                    operation_type,
+                    target_type,
+                    target_id,
+                    action,
+                    status,
+                    created_at,
+                    details_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry["audit_id"],
+                    entry["operation_type"],
+                    entry["target_type"],
+                    entry["target_id"],
+                    entry["action"],
+                    entry["status"],
+                    entry["created_at"],
+                    _json_dumps(
+                        entry["details"]
+                    ),
+                ),
+            )
+
+            conn.commit()
+
+        return entry
+
+    def list_operation_audit(
+        self,
+        *,
+        limit: int = 100,
+        operation_type: str
+        | None = None,
+    ) -> list[dict[str, Any]]:
+
+        normalized_limit = min(
+            max(int(limit), 1),
+            500,
+        )
+
+        sql = """
+            SELECT audit_id,
+                   operation_type,
+                   target_type,
+                   target_id,
+                   action,
+                   status,
+                   created_at,
+                   details_json
+            FROM workflow_operations_audit
+        """
+
+        params: list[Any] = []
+
+        if operation_type:
+            sql += " WHERE operation_type = ?"
+            params.append(
+                str(operation_type).strip()
+            )
+
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(normalized_limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                sql,
+                tuple(params),
+            ).fetchall()
+
+        return [
+            {
+                "audit_id": row["audit_id"],
+                "operation_type": (
+                    row["operation_type"]
+                ),
+                "target_type": (
+                    row["target_type"]
+                ),
+                "target_id": row["target_id"],
+                "action": row["action"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+                "details": json.loads(
+                    row["details_json"]
+                    or "{}"
+                ),
+            }
+            for row in rows
+        ]
+
+    def set_worker_control(
+        self,
+        worker_id: str,
+        *,
+        control_mode: str,
+    ) -> dict[str, Any]:
+
+        normalized = (
+            str(control_mode)
+            .strip()
+            .lower()
+        )
+
+        try:
+            result = (
+                self
+                ._set_worker_control_d10_base(
+                    worker_id,
+                    control_mode=normalized,
+                )
+            )
+        except (
+            KeyError,
+            ValueError,
+        ) as exc:
+            self._record_operation_audit(
+                operation_type="worker_control",
+                target_type="worker",
+                target_id=worker_id,
+                action=normalized,
+                status="failed",
+                details={
+                    "error": str(exc),
+                },
+            )
+            raise
+
+        self._record_operation_audit(
+            operation_type="worker_control",
+            target_type="worker",
+            target_id=worker_id,
+            action=normalized,
+            status="success",
+            details={
+                "control_mode": (
+                    result.get(
+                        "control_mode"
+                    )
+                ),
+                "accepting_work": (
+                    result.get(
+                        "accepting_work"
+                    )
+                ),
+            },
+        )
+
+        return result
+
+    def replay_dead_letters(
+        self,
+        run_ids: list[str],
+        *,
+        reset_attempts: bool = True,
+        priority: int | None = None,
+        max_attempts: int | None = None,
+        retry_base_seconds: float | None = None,
+        timeout_seconds: float | None = None,
+        max_batch_size: int | None = None,
+        max_queued_jobs: int | None = None,
+        max_active_per_user: int | None = None,
+    ) -> dict[str, Any]:
+
+        try:
+            result = (
+                self
+                ._replay_dead_letters_d10_base(
+                    run_ids,
+                    reset_attempts=(
+                        reset_attempts
+                    ),
+                    priority=priority,
+                    max_attempts=max_attempts,
+                    retry_base_seconds=(
+                        retry_base_seconds
+                    ),
+                    timeout_seconds=(
+                        timeout_seconds
+                    ),
+                    max_batch_size=(
+                        max_batch_size
+                    ),
+                    max_queued_jobs=(
+                        max_queued_jobs
+                    ),
+                    max_active_per_user=(
+                        max_active_per_user
+                    ),
+                )
+            )
+        except ValueError as exc:
+            self._record_operation_audit(
+                operation_type=(
+                    "dead_letter_replay"
+                ),
+                target_type=(
+                    "workflow_batch"
+                ),
+                action="replay",
+                status="failed",
+                details={
+                    "requested_run_ids": (
+                        list(run_ids)
+                    ),
+                    "error": str(exc),
+                },
+            )
+            raise
+
+        self._record_operation_audit(
+            operation_type=(
+                "dead_letter_replay"
+            ),
+            target_type="workflow_batch",
+            action="replay",
+            status="success",
+            details={
+                "requested_count": (
+                    result.get(
+                        "requested_count",
+                        0,
+                    )
+                ),
+                "replayed_count": (
+                    result.get(
+                        "replayed_count",
+                        0,
+                    )
+                ),
+                "skipped_count": (
+                    result.get(
+                        "skipped_count",
+                        0,
+                    )
+                ),
+                "replayed_run_ids": (
+                    result.get(
+                        "replayed_run_ids",
+                        [],
+                    )
+                ),
+            },
+        )
+
+        return result
+
+    def archive_terminal_jobs(
+        self,
+        *,
+        older_than_seconds: float = 604800.0,
+        limit: int = 500,
+        include_dead_letter: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+
+        try:
+            result = (
+                self
+                ._archive_terminal_jobs_d10_base(
+                    older_than_seconds=(
+                        older_than_seconds
+                    ),
+                    limit=limit,
+                    include_dead_letter=(
+                        include_dead_letter
+                    ),
+                    dry_run=dry_run,
+                )
+            )
+        except ValueError as exc:
+            self._record_operation_audit(
+                operation_type="queue_archive",
+                target_type="queue",
+                action="archive",
+                status="failed",
+                details={
+                    "older_than_seconds": (
+                        older_than_seconds
+                    ),
+                    "limit": limit,
+                    "include_dead_letter": (
+                        include_dead_letter
+                    ),
+                    "dry_run": dry_run,
+                    "error": str(exc),
+                },
+            )
+            raise
+
+        self._record_operation_audit(
+            operation_type="queue_archive",
+            target_type="queue",
+            action=(
+                "preview"
+                if dry_run
+                else "archive"
+            ),
+            status="success",
+            details={
+                "candidate_count": (
+                    result.get(
+                        "candidate_count",
+                        0,
+                    )
+                ),
+                "archived_count": (
+                    result.get(
+                        "archived_count",
+                        0,
+                    )
+                ),
+                "run_ids": (
+                    result.get(
+                        "run_ids",
+                        [],
+                    )
+                ),
+                "include_dead_letter": (
+                    include_dead_letter
+                ),
+            },
+        )
+
+        return result
+
+    def bulk_set_worker_control(
+        self,
+        worker_ids: list[str],
+        *,
+        action: str,
+        max_batch_size: int
+        | None = None,
+    ) -> dict[str, Any]:
+
+        action_map = {
+            "pause": "paused",
+            "resume": "running",
+            "drain": "draining",
+        }
+
+        normalized_action = (
+            str(action).strip().lower()
+        )
+
+        if normalized_action not in action_map:
+            raise ValueError(
+                "Worker batch action must be "
+                "pause, resume, or drain."
+            )
+
+        batch_limit = max(
+            int(
+                max_batch_size
+                if max_batch_size is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_WORKER_CONTROL_BATCH_MAX",
+                    "100",
+                )
+            ),
+            1,
+        )
+
+        ordered_ids: list[str] = []
+        seen: set[str] = set()
+
+        for raw_worker_id in worker_ids:
+            worker_id = (
+                str(raw_worker_id).strip()
+            )
+
+            if (
+                worker_id
+                and worker_id not in seen
+            ):
+                ordered_ids.append(worker_id)
+                seen.add(worker_id)
+
+        if not ordered_ids:
+            raise ValueError(
+                "At least one Worker ID is required."
+            )
+
+        if len(ordered_ids) > batch_limit:
+            raise ValueError(
+                "Worker control batch exceeds "
+                f"the configured limit of "
+                f"{batch_limit}."
+            )
+
+        control_mode = action_map[
+            normalized_action
+        ]
+
+        controlled: list[
+            dict[str, Any]
+        ] = []
+        skipped: list[
+            dict[str, str]
+        ] = []
+
+        for worker_id in ordered_ids:
+
+            try:
+                controlled.append(
+                    self.set_worker_control(
+                        worker_id,
+                        control_mode=(
+                            control_mode
+                        ),
+                    )
+                )
+            except KeyError:
+                skipped.append(
+                    {
+                        "worker_id": worker_id,
+                        "reason": "not_found",
+                    }
+                )
+            except ValueError as exc:
+                skipped.append(
+                    {
+                        "worker_id": worker_id,
+                        "reason": str(exc),
+                    }
+                )
+
+        result = {
+            "requested_count": len(
+                ordered_ids
+            ),
+            "succeeded_count": len(
+                controlled
+            ),
+            "skipped_count": len(skipped),
+            "workers": controlled,
+            "skipped": skipped,
+        }
+
+        self._record_operation_audit(
+            operation_type=(
+                "worker_control_batch"
+            ),
+            target_type="worker_batch",
+            action=normalized_action,
+            status="success",
+            details={
+                "requested_count": (
+                    result[
+                        "requested_count"
+                    ]
+                ),
+                "succeeded_count": (
+                    result[
+                        "succeeded_count"
+                    ]
+                ),
+                "skipped_count": (
+                    result[
+                        "skipped_count"
+                    ]
+                ),
+                "worker_ids": ordered_ids,
+            },
+        )
+
+        return result
+
+    def cleanup_worker_history(
+        self,
+        *,
+        older_than_seconds: float
+        | None = None,
+        stale_after_seconds: float = 90.0,
+        include_stale_running: bool = True,
+        limit: int | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+
+        age = float(
+            older_than_seconds
+            if older_than_seconds is not None
+            else os.getenv(
+                "NOVELFORGE_WORKFLOW_WORKER_HISTORY_RETENTION_SECONDS",
+                "604800",
+            )
+        )
+
+        if not 0.0 <= age <= 315360000.0:
+            raise ValueError(
+                "Worker history age must be "
+                "between 0 and 315360000 "
+                "seconds."
+            )
+
+        stale_after = min(
+            max(
+                float(stale_after_seconds),
+                1.0,
+            ),
+            86400.0,
+        )
+
+        normalized_limit = min(
+            max(
+                int(
+                    limit
+                    if limit is not None
+                    else os.getenv(
+                        "NOVELFORGE_WORKFLOW_WORKER_HISTORY_CLEANUP_BATCH_SIZE",
+                        "500",
+                    )
+                ),
+                1,
+            ),
+            5000,
+        )
+
+        now_dt = datetime.now(
+            timezone.utc
+        )
+
+        terminal_cutoff = (
+            now_dt
+            - timedelta(seconds=age)
+        ).isoformat()
+
+        stale_cutoff = (
+            now_dt
+            - timedelta(
+                seconds=max(
+                    age,
+                    stale_after,
+                )
+            )
+        ).isoformat()
+
+        with self._connect() as conn:
+
+            rows = conn.execute(
+                """
+                SELECT worker_id,
+                       worker_status,
+                       active_count,
+                       started_at,
+                       heartbeat_at,
+                       stopped_at
+                FROM workflow_workers
+                WHERE active_count = 0
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM workflow_run_jobs
+                      WHERE lease_owner =
+                            workflow_workers.worker_id
+                        AND queue_status IN (
+                            'running',
+                            'cancelling'
+                        )
+                  )
+                  AND (
+                      (
+                          worker_status IN (
+                              'stopped',
+                              'stopping'
+                          )
+                          AND COALESCE(
+                              stopped_at,
+                              heartbeat_at
+                          ) <= ?
+                      )
+                      OR (
+                          ? = 1
+                          AND worker_status =
+                              'running'
+                          AND heartbeat_at <= ?
+                      )
+                  )
+                ORDER BY COALESCE(
+                    stopped_at,
+                    heartbeat_at
+                ) ASC
+                LIMIT ?
+                """,
+                (
+                    terminal_cutoff,
+                    (
+                        1
+                        if include_stale_running
+                        else 0
+                    ),
+                    stale_cutoff,
+                    normalized_limit,
+                ),
+            ).fetchall()
+
+        worker_ids = [
+            row["worker_id"]
+            for row in rows
+        ]
+
+        if dry_run or not worker_ids:
+
+            result = {
+                "dry_run": bool(dry_run),
+                "candidate_count": len(
+                    worker_ids
+                ),
+                "deleted_count": 0,
+                "worker_ids": worker_ids,
+            }
+
+            self._record_operation_audit(
+                operation_type=(
+                    "worker_history_cleanup"
+                ),
+                target_type=(
+                    "worker_history"
+                ),
+                action="preview",
+                status="success",
+                details=result,
+            )
+
+            return result
+
+        deleted_ids: list[str] = []
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+
+            for worker_id in worker_ids:
+
+                deleted = conn.execute(
+                    """
+                    DELETE FROM workflow_workers
+                    WHERE worker_id = ?
+                      AND active_count = 0
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM workflow_run_jobs
+                          WHERE lease_owner = ?
+                            AND queue_status IN (
+                                'running',
+                                'cancelling'
+                            )
+                      )
+                    """,
+                    (
+                        worker_id,
+                        worker_id,
+                    ),
+                ).rowcount
+
+                if deleted:
+                    deleted_ids.append(
+                        worker_id
+                    )
+
+            conn.commit()
+
+        result = {
+            "dry_run": False,
+            "candidate_count": len(
+                worker_ids
+            ),
+            "deleted_count": len(
+                deleted_ids
+            ),
+            "worker_ids": deleted_ids,
+        }
+
+        self._record_operation_audit(
+            operation_type=(
+                "worker_history_cleanup"
+            ),
+            target_type="worker_history",
+            action="cleanup",
+            status="success",
+            details=result,
+        )
+
+        return result
+
+    def evaluate_operational_alerts(
+        self,
+        *,
+        window_seconds: float = 300.0,
+        stale_after_seconds: float = 90.0,
+        ready_jobs_threshold: int
+        | None = None,
+        oldest_ready_seconds_threshold: float
+        | None = None,
+        dead_letter_threshold: int
+        | None = None,
+        worker_utilization_threshold: float
+        | None = None,
+    ) -> dict[str, Any]:
+
+        metrics = self.queue_metrics(
+            worker_stale_after_seconds=(
+                stale_after_seconds
+            ),
+            window_seconds=window_seconds,
+        )
+
+        health = self.worker_cluster_health(
+            stale_after_seconds=(
+                stale_after_seconds
+            )
+        )
+
+        ready_limit = max(
+            int(
+                ready_jobs_threshold
+                if ready_jobs_threshold
+                is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_ALERT_READY_JOBS",
+                    "100",
+                )
+            ),
+            0,
+        )
+
+        oldest_limit = max(
+            float(
+                oldest_ready_seconds_threshold
+                if oldest_ready_seconds_threshold
+                is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_ALERT_OLDEST_READY_SECONDS",
+                    "60",
+                )
+            ),
+            0.0,
+        )
+
+        dlq_limit = max(
+            int(
+                dead_letter_threshold
+                if dead_letter_threshold
+                is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_ALERT_DEAD_LETTERS",
+                    "10",
+                )
+            ),
+            0,
+        )
+
+        utilization_limit = min(
+            max(
+                float(
+                    worker_utilization_threshold
+                    if worker_utilization_threshold
+                    is not None
+                    else os.getenv(
+                        "NOVELFORGE_WORKFLOW_ALERT_WORKER_UTILIZATION",
+                        "0.9",
+                    )
+                ),
+                0.0,
+            ),
+            1.0,
+        )
+
+        alerts: list[
+            dict[str, Any]
+        ] = []
+
+        def add_alert(
+            *,
+            code: str,
+            severity: str,
+            message: str,
+            value: Any,
+            threshold: Any,
+        ) -> None:
+
+            alerts.append(
+                {
+                    "code": code,
+                    "severity": severity,
+                    "message": message,
+                    "value": value,
+                    "threshold": threshold,
+                }
+            )
+
+        if (
+            health["health_status"]
+            == "unavailable"
+        ):
+            add_alert(
+                code="worker_unavailable",
+                severity="critical",
+                message=(
+                    "No running Workflow Worker "
+                    "is available."
+                ),
+                value=health[
+                    "running_workers"
+                ],
+                threshold=1,
+            )
+        elif health[
+            "accepting_workers"
+        ] == 0:
+            add_alert(
+                code="worker_not_accepting",
+                severity="critical",
+                message=(
+                    "Workflow Workers are running "
+                    "but none accepts new work."
+                ),
+                value=0,
+                threshold=1,
+            )
+
+        if metrics.get(
+            "backpressure_active"
+        ):
+            add_alert(
+                code="queue_backpressure",
+                severity="critical",
+                message=(
+                    "Workflow queue backpressure "
+                    "is active."
+                ),
+                value=True,
+                threshold=False,
+            )
+
+        ready_count = int(
+            health.get(
+                "ready_count",
+                0,
+            )
+        )
+
+        if (
+            ready_limit > 0
+            and ready_count >= ready_limit
+        ):
+            add_alert(
+                code="queue_backlog",
+                severity="warning",
+                message=(
+                    "Ready Workflow queue depth "
+                    "reached the warning threshold."
+                ),
+                value=ready_count,
+                threshold=ready_limit,
+            )
+
+        oldest_ready = metrics.get(
+            "oldest_ready_age_seconds"
+        )
+
+        if (
+            oldest_limit > 0.0
+            and oldest_ready is not None
+            and float(oldest_ready)
+            >= oldest_limit
+        ):
+            add_alert(
+                code="queue_wait_age",
+                severity="warning",
+                message=(
+                    "Oldest ready Workflow job "
+                    "exceeded the wait threshold."
+                ),
+                value=float(
+                    oldest_ready
+                ),
+                threshold=oldest_limit,
+            )
+
+        dead_letter_count = int(
+            (
+                metrics.get(
+                    "status_counts"
+                )
+                or {}
+            ).get(
+                "dead_letter",
+                0,
+            )
+        )
+
+        if (
+            dlq_limit > 0
+            and dead_letter_count
+            >= dlq_limit
+        ):
+            add_alert(
+                code="dead_letter_backlog",
+                severity="warning",
+                message=(
+                    "Dead-letter queue reached "
+                    "the warning threshold."
+                ),
+                value=dead_letter_count,
+                threshold=dlq_limit,
+            )
+
+        utilization = float(
+            health.get(
+                "utilization",
+                0.0,
+            )
+        )
+
+        if (
+            utilization_limit > 0.0
+            and utilization
+            >= utilization_limit
+        ):
+            add_alert(
+                code="worker_utilization",
+                severity="warning",
+                message=(
+                    "Workflow Worker utilization "
+                    "reached the warning threshold."
+                ),
+                value=utilization,
+                threshold=(
+                    utilization_limit
+                ),
+            )
+
+        severities = {
+            item["severity"]
+            for item in alerts
+        }
+
+        alert_status = (
+            "critical"
+            if "critical" in severities
+            else (
+                "warning"
+                if alerts
+                else "ok"
+            )
+        )
+
+        return {
+            "alert_status": alert_status,
+            "alerts": alerts,
+            "thresholds": {
+                "ready_jobs": ready_limit,
+                "oldest_ready_seconds": (
+                    oldest_limit
+                ),
+                "dead_letters": dlq_limit,
+                "worker_utilization": (
+                    utilization_limit
+                ),
+            },
+        }
+
+    def prometheus_metrics(
+        self,
+        *,
+        window_seconds: float = 300.0,
+        stale_after_seconds: float = 90.0,
+    ) -> str:
+
+        metrics = self.queue_metrics(
+            worker_stale_after_seconds=(
+                stale_after_seconds
+            ),
+            window_seconds=window_seconds,
+        )
+
+        health = self.worker_cluster_health(
+            stale_after_seconds=(
+                stale_after_seconds
+            )
+        )
+
+        alerts = self.evaluate_operational_alerts(
+            window_seconds=window_seconds,
+            stale_after_seconds=(
+                stale_after_seconds
+            ),
+        )
+
+        with self._connect() as conn:
+            audit_total = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM workflow_operations_audit
+                    """
+                ).fetchone()["count"]
+            )
+
+        lines = [
+            "# HELP novelforge_workflow_queue_jobs Workflow jobs by queue status.",
+            "# TYPE novelforge_workflow_queue_jobs gauge",
+        ]
+
+        for queue_status in (
+            "queued",
+            "retry_wait",
+            "running",
+            "cancelling",
+            "completed",
+            "cancelled",
+            "failed",
+            "dead_letter",
+        ):
+            count = int(
+                (
+                    metrics.get(
+                        "status_counts"
+                    )
+                    or {}
+                ).get(
+                    queue_status,
+                    0,
+                )
+            )
+            lines.append(
+                "novelforge_workflow_queue_jobs"
+                f'{{status="{queue_status}"}} '
+                f"{count}"
+            )
+
+        gauge_values = {
+            "novelforge_workflow_queue_ready_jobs": (
+                health.get(
+                    "ready_count",
+                    0,
+                )
+            ),
+            "novelforge_workflow_worker_running": (
+                health.get(
+                    "running_workers",
+                    0,
+                )
+            ),
+            "novelforge_workflow_worker_stale": (
+                health.get(
+                    "stale_workers",
+                    0,
+                )
+            ),
+            "novelforge_workflow_worker_accepting": (
+                health.get(
+                    "accepting_workers",
+                    0,
+                )
+            ),
+            "novelforge_workflow_worker_utilization": (
+                health.get(
+                    "utilization",
+                    0.0,
+                )
+            ),
+            "novelforge_workflow_queue_throughput_per_minute": (
+                metrics.get(
+                    "throughput_per_minute",
+                    0.0,
+                )
+            ),
+            "novelforge_workflow_queue_backpressure_active": (
+                1
+                if metrics.get(
+                    "backpressure_active"
+                )
+                else 0
+            ),
+            "novelforge_workflow_dlq_replayed_total": (
+                metrics.get(
+                    "dlq_replayed_total",
+                    0,
+                )
+            ),
+            "novelforge_workflow_archived_jobs_total": (
+                metrics.get(
+                    "archived_jobs_total",
+                    0,
+                )
+            ),
+            "novelforge_workflow_operations_audit_total": (
+                audit_total
+            ),
+        }
+
+        oldest_ready = metrics.get(
+            "oldest_ready_age_seconds"
+        )
+
+        gauge_values[
+            "novelforge_workflow_queue_oldest_ready_age_seconds"
+        ] = (
+            float(oldest_ready)
+            if oldest_ready is not None
+            else 0.0
+        )
+
+        for name, value in (
+            gauge_values.items()
+        ):
+            lines.extend(
+                [
+                    f"# TYPE {name} gauge",
+                    f"{name} {value}",
+                ]
+            )
+
+        severity_counts = {
+            "warning": 0,
+            "critical": 0,
+        }
+
+        for item in alerts["alerts"]:
+            severity = item["severity"]
+            if severity in severity_counts:
+                severity_counts[
+                    severity
+                ] += 1
+
+        lines.append(
+            "# TYPE "
+            "novelforge_workflow_operational_alerts "
+            "gauge"
+        )
+
+        for severity in (
+            "warning",
+            "critical",
+        ):
+            lines.append(
+                "novelforge_workflow_operational_alerts"
+                f'{{severity="{severity}"}} '
+                f"{severity_counts[severity]}"
+            )
+
+        return "\n".join(lines) + "\n"
+
+    def operations_dashboard(
+        self,
+        *,
+        window_seconds: float = 300.0,
+        stale_after_seconds: float = 90.0,
+        audit_limit: int = 20,
+    ) -> dict[str, Any]:
+
+        queue = self.queue_metrics(
+            worker_stale_after_seconds=(
+                stale_after_seconds
+            ),
+            window_seconds=window_seconds,
+        )
+
+        workers = self.worker_cluster_health(
+            stale_after_seconds=(
+                stale_after_seconds
+            )
+        )
+
+        alert_result = (
+            self.evaluate_operational_alerts(
+                window_seconds=window_seconds,
+                stale_after_seconds=(
+                    stale_after_seconds
+                ),
+            )
+        )
+
+        return {
+            "generated_at": _utc_now(),
+            "alert_status": (
+                alert_result[
+                    "alert_status"
+                ]
+            ),
+            "alerts": (
+                alert_result["alerts"]
+            ),
+            "thresholds": (
+                alert_result[
+                    "thresholds"
+                ]
+            ),
+            "queue": queue,
+            "workers": workers,
+            "recent_audit": (
+                self.list_operation_audit(
+                    limit=audit_limit
+                )
+            ),
+        }
