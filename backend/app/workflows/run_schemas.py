@@ -20,11 +20,13 @@ from app.workflows.schemas import (
 WorkflowExecutionStatus = Literal[
     "queued",
     "running",
+    "retrying",
     "cancelling",
     "cancelled",
     "succeeded",
     "resumable",
     "failed",
+    "dead_letter",
 ]
 
 
@@ -190,11 +192,13 @@ class WorkflowResumeRequest(BaseModel):
 
 WorkflowJobQueueStatus = Literal[
     "queued",
+    "retry_wait",
     "running",
     "cancelling",
     "cancelled",
     "completed",
     "failed",
+    "dead_letter",
 ]
 
 
@@ -211,6 +215,35 @@ class WorkflowJobControl(BaseModel):
     )
 
     idempotency_key: str | None = None
+
+    priority: int = Field(
+        default=0,
+        ge=-100,
+        le=100,
+    )
+
+    attempt_count: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    max_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+    )
+
+    retry_base_seconds: float = Field(
+        default=2.0,
+        ge=0.01,
+        le=3600.0,
+    )
+
+    available_at: str
+
+    last_error: str | None = None
+
+    dead_lettered_at: str | None = None
 
     cancel_requested: bool = False
 
@@ -297,6 +330,140 @@ class WorkflowWorkerListResponse(
 
     data: list[
         WorkflowWorkerInfo
+    ] = Field(
+        default_factory=list
+    )
+
+class WorkflowQueueRetryRequest(
+    BaseModel
+):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    reset_attempts: bool = True
+
+    priority: int | None = Field(
+        default=None,
+        ge=-100,
+        le=100,
+    )
+
+    max_attempts: int | None = Field(
+        default=None,
+        ge=1,
+        le=10,
+    )
+
+    retry_base_seconds: float | None = Field(
+        default=None,
+        ge=0.01,
+        le=3600.0,
+    )
+
+
+class WorkflowQueueMetrics(
+    BaseModel
+):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    total_jobs: int = Field(
+        ge=0
+    )
+
+    status_counts: dict[
+        str,
+        int,
+    ] = Field(
+        default_factory=dict
+    )
+
+    ready_count: int = Field(
+        ge=0
+    )
+
+    delayed_retry_count: int = Field(
+        ge=0
+    )
+
+    dead_letter_count: int = Field(
+        ge=0
+    )
+
+    priority_min: int | None = None
+
+    priority_max: int | None = None
+
+    priority_average: float | None = None
+
+    worker_status_counts: dict[
+        str,
+        int,
+    ] = Field(
+        default_factory=dict
+    )
+
+
+class WorkflowQueueMetricsResponse(
+    BaseModel
+):
+
+    code: int = 0
+
+    message: str = "success"
+
+    data: WorkflowQueueMetrics
+
+
+class WorkflowDeadLetterEntry(
+    BaseModel
+):
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    run_id: str
+
+    user_id: str
+
+    novel_id: str
+
+    priority: int
+
+    attempt_count: int = Field(
+        ge=0
+    )
+
+    max_attempts: int = Field(
+        ge=1
+    )
+
+    retry_base_seconds: float = Field(
+        ge=0.01
+    )
+
+    last_error: str | None = None
+
+    dead_lettered_at: str | None = None
+
+    updated_at: str
+
+
+class WorkflowDeadLetterListResponse(
+    BaseModel
+):
+
+    code: int = 0
+
+    message: str = "success"
+
+    data: list[
+        WorkflowDeadLetterEntry
     ] = Field(
         default_factory=list
     )

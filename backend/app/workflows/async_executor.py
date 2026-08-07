@@ -34,6 +34,8 @@ class AsyncWorkflowExecutor:
         max_concurrency: int | None = None,
         lease_seconds: float | None = None,
         heartbeat_seconds: float | None = None,
+        max_retry_delay_seconds: float
+        | None = None,
         poll_interval: float = 0.25,
         execution_mode: str | None = None,
     ) -> None:
@@ -95,6 +97,22 @@ class AsyncWorkflowExecutor:
                 )
             ),
             0.02,
+        )
+
+        self._max_retry_delay_seconds = max(
+            float(
+                max_retry_delay_seconds
+                if max_retry_delay_seconds
+                is not None
+                else os.getenv(
+                    (
+                        "NOVELFORGE_WORKFLOW_"
+                        "MAX_RETRY_DELAY_SECONDS"
+                    ),
+                    "300",
+                )
+            ),
+            0.01,
         )
 
         self._poll_interval = max(
@@ -222,6 +240,9 @@ class AsyncWorkflowExecutor:
         request,
         *,
         idempotency_key: str | None = None,
+        priority: int = 0,
+        max_attempts: int = 3,
+        retry_base_seconds: float = 2.0,
     ) -> WorkflowAsyncSubmission:
 
         run_id, deduplicated = (
@@ -229,6 +250,13 @@ class AsyncWorkflowExecutor:
                 request,
                 idempotency_key=(
                     idempotency_key
+                ),
+                priority=priority,
+                max_attempts=(
+                    max_attempts
+                ),
+                retry_base_seconds=(
+                    retry_base_seconds
                 ),
             )
         )
@@ -310,6 +338,37 @@ class AsyncWorkflowExecutor:
             run_id
         )
 
+    async def retry(
+        self,
+        run_id: str,
+        *,
+        reset_attempts: bool = True,
+        priority: int | None = None,
+        max_attempts: int | None = None,
+        retry_base_seconds: float
+        | None = None,
+    ) -> WorkflowAsyncSubmission:
+
+        self._queue.retry_run(
+            run_id,
+            reset_attempts=(
+                reset_attempts
+            ),
+            priority=priority,
+            max_attempts=(
+                max_attempts
+            ),
+            retry_base_seconds=(
+                retry_base_seconds
+            ),
+        )
+
+        self.ensure_started()
+
+        return self.get_submission(
+            run_id
+        )
+
     async def wait_for_terminal(
         self,
         run_id: str,
@@ -340,6 +399,7 @@ class AsyncWorkflowExecutor:
                     "cancelled",
                     "completed",
                     "failed",
+                    "dead_letter",
                 }
             ):
 
@@ -608,6 +668,44 @@ class AsyncWorkflowExecutor:
                 result,
             )
 
+            persisted_run = (
+                self
+                ._queue
+                .run_storage
+                .get_run(
+                    run_id
+                )
+            )
+
+            if (
+                persisted_run[
+                    "execution_status"
+                ]
+                == "failed"
+            ):
+
+                self._queue.handle_failure(
+                    run_id,
+                    worker_id=(
+                        self._worker_id
+                    ),
+                    error=(
+                        persisted_run.get(
+                            "error"
+                        )
+                        or (
+                            "Workflow execution "
+                            "failed."
+                        )
+                    ),
+                    max_retry_delay_seconds=(
+                        self
+                        ._max_retry_delay_seconds
+                    ),
+                )
+
+                return
+
             self._queue.mark_terminal(
                 run_id
             )
@@ -644,13 +742,16 @@ class AsyncWorkflowExecutor:
 
         except Exception as exc:
 
-            self._queue.run_storage.fail_run(
+            self._queue.handle_failure(
                 run_id,
-                str(exc),
-            )
-
-            self._queue.mark_failed(
-                run_id
+                worker_id=(
+                    self._worker_id
+                ),
+                error=str(exc),
+                max_retry_delay_seconds=(
+                    self
+                    ._max_retry_delay_seconds
+                ),
             )
 
         finally:

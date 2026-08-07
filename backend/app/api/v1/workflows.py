@@ -22,6 +22,9 @@ from app.workflows.chapter_workflow import (
 )
 from app.workflows.run_schemas import (
     WorkflowAsyncSubmissionResponse,
+    WorkflowDeadLetterListResponse,
+    WorkflowQueueMetricsResponse,
+    WorkflowQueueRetryRequest,
     WorkflowResumeRequest,
     WorkflowRunListResponse,
     WorkflowRunResponse,
@@ -264,6 +267,27 @@ async def enqueue_chapter_workflow_run(
         default=None,
         alias="Idempotency-Key",
     ),
+    priority: int = Header(
+        default=0,
+        alias="X-Workflow-Priority",
+        ge=-100,
+        le=100,
+    ),
+    max_attempts: int = Header(
+        default=3,
+        alias="X-Workflow-Max-Attempts",
+        ge=1,
+        le=10,
+    ),
+    retry_base_seconds: float = Header(
+        default=2.0,
+        alias=(
+            "X-Workflow-"
+            "Retry-Base-Seconds"
+        ),
+        ge=0.01,
+        le=3600.0,
+    ),
 ) -> WorkflowAsyncSubmissionResponse:
 
     executor = _async_executor(
@@ -276,6 +300,13 @@ async def enqueue_chapter_workflow_run(
             payload,
             idempotency_key=(
                 idempotency_key
+            ),
+            priority=priority,
+            max_attempts=(
+                max_attempts
+            ),
+            retry_base_seconds=(
+                retry_base_seconds
             ),
         )
 
@@ -398,4 +429,125 @@ async def list_workflow_workers(
 
     return WorkflowWorkerListResponse(
         data=workers
+    )
+
+@router.post(
+    "/runs/{run_id}/retry",
+    response_model=(
+        WorkflowAsyncSubmissionResponse
+    ),
+)
+async def retry_workflow_run(
+    run_id: str,
+    payload: WorkflowQueueRetryRequest,
+    request: Request,
+) -> WorkflowAsyncSubmissionResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    try:
+
+        submission = await executor.retry(
+            run_id,
+            reset_attempts=(
+                payload.reset_attempts
+            ),
+            priority=payload.priority,
+            max_attempts=(
+                payload.max_attempts
+            ),
+            retry_base_seconds=(
+                payload
+                .retry_base_seconds
+            ),
+        )
+
+    except KeyError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowAsyncSubmissionResponse(
+        data=submission
+    )
+
+
+@router.get(
+    "/queue/metrics",
+    response_model=(
+        WorkflowQueueMetricsResponse
+    ),
+)
+async def get_workflow_queue_metrics(
+    request: Request,
+    worker_stale_after_seconds: float = Query(
+        default=90.0,
+        ge=1.0,
+        le=3600.0,
+    ),
+) -> WorkflowQueueMetricsResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    metrics = (
+        executor
+        .queue
+        .queue_metrics(
+            worker_stale_after_seconds=(
+                worker_stale_after_seconds
+            )
+        )
+    )
+
+    return WorkflowQueueMetricsResponse(
+        data=metrics
+    )
+
+
+@router.get(
+    "/dead-letter",
+    response_model=(
+        WorkflowDeadLetterListResponse
+    ),
+)
+async def list_workflow_dead_letters(
+    request: Request,
+    limit: int = Query(
+        default=100,
+        ge=1,
+        le=500,
+    ),
+) -> WorkflowDeadLetterListResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    entries = (
+        executor
+        .queue
+        .list_dead_letters(
+            limit=limit
+        )
+    )
+
+    return WorkflowDeadLetterListResponse(
+        data=entries
     )

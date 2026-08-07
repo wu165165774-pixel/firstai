@@ -1627,3 +1627,42 @@ lease_recovered count = 1
 run_completed count = 1
 chapter version count = 1
 ```
+
+## v0.15.0-alpha.8 — Sprint 07D.7 Queue Policies and DLQ
+
+独立 Workflow Worker 增加持久化队列策略和失败恢复能力。
+
+新增能力：
+
+- `-100 ～ 100` 任务优先级
+- 优先级、可执行时间和 FIFO 调度
+- 最大尝试次数与指数退避
+- `retry_wait` 和 `retrying` 状态
+- Dead Letter Queue
+- 手动重新入队
+- DLQ 查询 API
+- 队列 Metrics API
+- 旧 SQLite 数据库原地迁移
+- 终态任务优先级统计
+
+新增 API：
+
+```text
+POST /api/v1/workflows/runs/{run_id}/retry
+GET  /api/v1/workflows/dead-letter
+GET  /api/v1/workflows/queue/metrics
+```
+
+验收：
+
+```text
+103/103 full regression passed
+priority_min = -50
+priority_max = 95
+priority_average = 22.5
+dead_letter_count = 3
+run_claimed = 4
+retry_scheduled = 2
+run_dead_lettered = 2
+run_requeued = 1
+```
