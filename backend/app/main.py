@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.11",
+    version="0.15.0-alpha.12",
     lifespan=lifespan,
 )
 
@@ -96,4 +96,12 @@ app.include_router(
     workflow_router,
     prefix="/api/v1",
     tags=["Workflows"],
+)
+
+from app.api.v1.novels import router as novel_router
+
+app.include_router(
+    novel_router,
+    prefix="/api/v1",
+    tags=["Novel Planning"],
 )

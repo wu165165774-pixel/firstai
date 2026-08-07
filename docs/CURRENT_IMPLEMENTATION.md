@@ -1765,3 +1765,43 @@ worker health healthy
 ```
 
 最终 Dashboard 可保持 `warning`，例如历史 DLQ backlog 达到阈值；这与 Worker 集群健康状态独立。
+
+## v0.15.0-alpha.12 — Sprint 08A.1 Novel Project and Story Bible Foundation
+
+08A Novel Planning Foundation 正式启动。
+
+新增：
+
+- Novel Project 领域模型
+- 独立 `novels.db`
+- Story Bible 结构化数据
+- Story Bible 不可变 revision 历史
+- Novel Project optimistic revision
+- Story Bible optimistic revision
+- user/status Project 查询
+- Backend 重启持久化
+- Novel / Workflow 数据库隔离
+
+新增 API：
+
+```text
+POST  /api/v1/novels
+GET   /api/v1/novels
+GET   /api/v1/novels/{novel_id}
+PATCH /api/v1/novels/{novel_id}
+GET   /api/v1/novels/{novel_id}/story-bible
+PUT   /api/v1/novels/{novel_id}/story-bible
+GET   /api/v1/novels/{novel_id}/story-bible/revisions
+GET   /api/v1/novels/{novel_id}/story-bible/revisions/{revision}
+```
+
+验收：
+
+```text
+151/151 full regression passed
+Project revision conflict -> HTTP 409
+Story Bible revision conflict -> HTTP 409
+Story Bible revisions = [3, 2, 1]
+novels.db domain isolation passed
+Backend restart persistence passed
+```
