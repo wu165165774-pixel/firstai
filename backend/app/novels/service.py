@@ -7,6 +7,10 @@ from .schemas import (
     NovelProject,
     NovelProjectCreate,
     NovelProjectUpdate,
+    StoryArc,
+    StoryArcCreate,
+    StoryArcRevision,
+    StoryArcUpdate,
     StoryBible,
     StoryBibleRevision,
     StoryBibleUpdate,
@@ -129,5 +133,77 @@ class NovelProjectService:
     ) -> NovelPlanRevision:
         return self.storage.get_novel_plan_revision(
             novel_id,
+            revision,
+        )
+
+    def create_story_arc(
+        self,
+        novel_id: str,
+        payload: StoryArcCreate,
+    ) -> StoryArc:
+        return self.storage.create_story_arc(
+            novel_id,
+            payload,
+        )
+
+    def list_story_arcs(
+        self,
+        novel_id: str,
+        *,
+        volume_number: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[StoryArc]:
+        return self.storage.list_story_arcs(
+            novel_id,
+            volume_number=volume_number,
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_story_arc(
+        self,
+        novel_id: str,
+        arc_id: str,
+    ) -> StoryArc:
+        return self.storage.get_story_arc(
+            novel_id,
+            arc_id,
+        )
+
+    def update_story_arc(
+        self,
+        novel_id: str,
+        arc_id: str,
+        payload: StoryArcUpdate,
+    ) -> StoryArc:
+        return self.storage.update_story_arc(
+            novel_id,
+            arc_id,
+            payload,
+        )
+
+    def list_story_arc_revisions(
+        self,
+        novel_id: str,
+        arc_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[StoryArcRevision]:
+        return self.storage.list_story_arc_revisions(
+            novel_id,
+            arc_id,
+            limit=limit,
+        )
+
+    def get_story_arc_revision(
+        self,
+        novel_id: str,
+        arc_id: str,
+        revision: int,
+    ) -> StoryArcRevision:
+        return self.storage.get_story_arc_revision(
+            novel_id,
+            arc_id,
             revision,
         )

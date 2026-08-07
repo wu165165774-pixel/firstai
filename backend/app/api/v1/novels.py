@@ -16,6 +16,12 @@ from app.novels.schemas import (
     NovelProjectListResponse,
     NovelProjectResponse,
     NovelProjectUpdate,
+    StoryArcCreate,
+    StoryArcListResponse,
+    StoryArcResponse,
+    StoryArcRevisionListResponse,
+    StoryArcRevisionResponse,
+    StoryArcUpdate,
     StoryBibleResponse,
     StoryBibleRevisionListResponse,
     StoryBibleRevisionResponse,
@@ -259,3 +265,131 @@ async def get_novel_plan_revision(
     except NovelProjectNotFoundError as exc:
         raise _not_found(exc) from exc
     return NovelPlanRevisionResponse(data=item)
+
+@router.post(
+    "/{novel_id}/arcs",
+    response_model=StoryArcResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_story_arc(
+    novel_id: str,
+    payload: StoryArcCreate,
+) -> StoryArcResponse:
+    try:
+        arc = service.create_story_arc(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return StoryArcResponse(data=arc)
+
+
+@router.get(
+    "/{novel_id}/arcs",
+    response_model=StoryArcListResponse,
+)
+async def list_story_arcs(
+    novel_id: str,
+    volume_number: int | None = Query(
+        default=None,
+        ge=1,
+        le=10_000,
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> StoryArcListResponse:
+    try:
+        arcs = service.list_story_arcs(
+            novel_id,
+            volume_number=volume_number,
+            limit=limit,
+            offset=offset,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return StoryArcListResponse(data=arcs)
+
+
+@router.get(
+    "/{novel_id}/arcs/{arc_id}",
+    response_model=StoryArcResponse,
+)
+async def get_story_arc(
+    novel_id: str,
+    arc_id: str,
+) -> StoryArcResponse:
+    try:
+        arc = service.get_story_arc(
+            novel_id,
+            arc_id,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return StoryArcResponse(data=arc)
+
+
+@router.put(
+    "/{novel_id}/arcs/{arc_id}",
+    response_model=StoryArcResponse,
+)
+async def update_story_arc(
+    novel_id: str,
+    arc_id: str,
+    payload: StoryArcUpdate,
+) -> StoryArcResponse:
+    try:
+        arc = service.update_story_arc(
+            novel_id,
+            arc_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return StoryArcResponse(data=arc)
+
+
+@router.get(
+    "/{novel_id}/arcs/{arc_id}/revisions",
+    response_model=StoryArcRevisionListResponse,
+)
+async def list_story_arc_revisions(
+    novel_id: str,
+    arc_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> StoryArcRevisionListResponse:
+    try:
+        revisions = service.list_story_arc_revisions(
+            novel_id,
+            arc_id,
+            limit=limit,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return StoryArcRevisionListResponse(
+        data=revisions
+    )
+
+
+@router.get(
+    "/{novel_id}/arcs/{arc_id}/revisions/{revision}",
+    response_model=StoryArcRevisionResponse,
+)
+async def get_story_arc_revision(
+    novel_id: str,
+    arc_id: str,
+    revision: int,
+) -> StoryArcRevisionResponse:
+    try:
+        item = service.get_story_arc_revision(
+            novel_id,
+            arc_id,
+            revision,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return StoryArcRevisionResponse(data=item)

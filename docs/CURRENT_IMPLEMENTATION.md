@@ -1845,3 +1845,49 @@ Plan revisions = [4, 3, 2, 1]
 Planner SQLite persistence passed
 Backend restart persistence passed
 ```
+
+## v0.15.0-alpha.14 — Sprint 08A.3 Story Arc Planning
+
+NovelForge 新增独立 Story Arc 规划层。
+
+新增：
+
+- Story Arc 独立领域实体
+- Volume / Arc 顺序和位置唯一约束
+- Story Arc immutable revisions
+- optimistic revision conflict
+- Project source revision tracking
+- Story Bible source revision tracking
+- Novel Plan source revision tracking
+- three-source dynamic `is_stale`
+- Turning Points
+- Character Progression
+- Plot Threads / Dependencies
+- target chapter range
+- Backend restart persistence
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/arcs
+GET  /api/v1/novels/{novel_id}/arcs
+GET  /api/v1/novels/{novel_id}/arcs/{arc_id}
+PUT  /api/v1/novels/{novel_id}/arcs/{arc_id}
+GET  /api/v1/novels/{novel_id}/arcs/{arc_id}/revisions
+GET  /api/v1/novels/{novel_id}/arcs/{arc_id}/revisions/{revision}
+```
+
+验收：
+
+```text
+186/186 full regression passed
+Arc position conflicts -> HTTP 409
+Arc revision conflict -> HTTP 409
+Project change -> Arc stale
+Story Bible change -> Arc stale
+Novel Plan change -> Arc stale
+Final Arc source revisions synchronized
+Arc revisions = [5, 4, 3, 2, 1]
+Story Arc SQLite persistence passed
+Backend restart persistence passed
+```

@@ -169,6 +169,101 @@ class NovelPlanRevision(BaseModel):
     created_at: str
 
 
+class StoryArcTurningPoint(BaseModel):
+    turning_point_id: str = Field(min_length=1, max_length=128)
+    order: int = Field(ge=1, le=100_000)
+    title: str = Field(min_length=1, max_length=256)
+    description: str = Field(default="", max_length=8000)
+    consequence: str = Field(default="", max_length=8000)
+    character_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StoryArcCharacterProgression(BaseModel):
+    character_id: str = Field(min_length=1, max_length=128)
+    character_name: str = Field(default="", max_length=256)
+    start_state: str = Field(default="", max_length=8000)
+    change: str = Field(default="", max_length=8000)
+    end_state: str = Field(default="", max_length=8000)
+    key_moments: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StoryArcCreate(BaseModel):
+    volume_number: int = Field(ge=1, le=10_000)
+    arc_number: int = Field(ge=1, le=100_000)
+    title: str = Field(min_length=1, max_length=256)
+    objective: str = Field(default="", max_length=8000)
+    summary: str = Field(default="", max_length=12000)
+    opening_state: str = Field(default="", max_length=8000)
+    closing_state: str = Field(default="", max_length=8000)
+    core_conflict: str = Field(default="", max_length=12000)
+    stakes: str = Field(default="", max_length=8000)
+    turning_points: list[StoryArcTurningPoint] = Field(default_factory=list)
+    character_progression: list[StoryArcCharacterProgression] = Field(default_factory=list)
+    plot_threads: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    target_chapter_start: int | None = Field(default=None, ge=1, le=1_000_000)
+    target_chapter_end: int | None = Field(default=None, ge=1, le=1_000_000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StoryArcUpdate(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=1)
+    volume_number: int | None = Field(default=None, ge=1, le=10_000)
+    arc_number: int | None = Field(default=None, ge=1, le=100_000)
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    objective: str | None = Field(default=None, max_length=8000)
+    summary: str | None = Field(default=None, max_length=12000)
+    opening_state: str | None = Field(default=None, max_length=8000)
+    closing_state: str | None = Field(default=None, max_length=8000)
+    core_conflict: str | None = Field(default=None, max_length=12000)
+    stakes: str | None = Field(default=None, max_length=8000)
+    turning_points: list[StoryArcTurningPoint] | None = None
+    character_progression: list[StoryArcCharacterProgression] | None = None
+    plot_threads: list[str] | None = None
+    dependencies: list[str] | None = None
+    target_chapter_start: int | None = Field(default=None, ge=1, le=1_000_000)
+    target_chapter_end: int | None = Field(default=None, ge=1, le=1_000_000)
+    metadata: dict[str, Any] | None = None
+
+
+class StoryArc(BaseModel):
+    arc_id: str
+    novel_id: str
+    volume_number: int
+    arc_number: int
+    revision: int
+    source_project_revision: int
+    source_story_bible_revision: int
+    source_novel_plan_revision: int
+    is_stale: bool = False
+    title: str
+    objective: str = ""
+    summary: str = ""
+    opening_state: str = ""
+    closing_state: str = ""
+    core_conflict: str = ""
+    stakes: str = ""
+    turning_points: list[StoryArcTurningPoint] = Field(default_factory=list)
+    character_progression: list[StoryArcCharacterProgression] = Field(default_factory=list)
+    plot_threads: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    target_chapter_start: int | None = None
+    target_chapter_end: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class StoryArcRevision(BaseModel):
+    arc_id: str
+    novel_id: str
+    revision: int
+    snapshot: StoryArc
+    created_at: str
+
+
 class NovelProjectResponse(BaseModel):
     code: int = 0
     message: str = "success"
@@ -215,3 +310,26 @@ class NovelPlanRevisionListResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: list[NovelPlanRevision] = Field(default_factory=list)
+
+class StoryArcResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: StoryArc
+
+
+class StoryArcListResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: list[StoryArc] = Field(default_factory=list)
+
+
+class StoryArcRevisionResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: StoryArcRevision
+
+
+class StoryArcRevisionListResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: list[StoryArcRevision] = Field(default_factory=list)
