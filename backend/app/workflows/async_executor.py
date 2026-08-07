@@ -399,6 +399,8 @@ class AsyncWorkflowExecutor:
         max_attempts: int | None = None,
         retry_base_seconds: float
         | None = None,
+        timeout_seconds: float
+        | None = None,
     ) -> WorkflowAsyncSubmission:
 
         self._queue.retry_run(
@@ -412,6 +414,9 @@ class AsyncWorkflowExecutor:
             ),
             retry_base_seconds=(
                 retry_base_seconds
+            ),
+            timeout_seconds=(
+                timeout_seconds
             ),
         )
 

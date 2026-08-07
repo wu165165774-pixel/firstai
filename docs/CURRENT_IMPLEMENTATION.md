@@ -1689,3 +1689,42 @@ timeout_failures_delta = 2
 real timed_out_count = 2
 production policy restore passed
 ```
+
+## v0.15.0-alpha.10 — Sprint 07D.9 Queue Operations and Observability
+
+Workflow 队列补齐批量运维、历史归档和可观测性闭环。
+
+新增能力：
+
+- DLQ 批量重放
+- 终态 queue job 归档
+- 默认 DLQ 归档保护
+- Run / Event / Version 历史保留
+- 窗口吞吐 Metrics
+- 排队延迟 Metrics
+- 执行耗时 Metrics
+- Worker 集群健康汇总
+- stale Worker 独立观测而不误判健康集群
+
+新增 API：
+
+```text
+POST /api/v1/workflows/dead-letter/replay
+POST /api/v1/workflows/queue/archive
+GET  /api/v1/workflows/queue/archive
+GET  /api/v1/workflows/workers/health
+```
+
+验收：
+
+```text
+124/124 full regression passed
+DLQ replayed = 2
+archived_count = 7
+run history preserved
+default DLQ archive protection passed
+health_status = healthy
+running_workers = 1
+accepting_workers = 1
+stale_workers = 2
+```

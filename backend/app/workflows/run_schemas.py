@@ -383,6 +383,12 @@ class WorkflowQueueRetryRequest(
         le=3600.0,
     )
 
+    timeout_seconds: float | None = Field(
+        default=None,
+        ge=0.1,
+        le=86400.0,
+    )
+
 
 class WorkflowQueueMetrics(
     BaseModel
@@ -453,6 +459,30 @@ class WorkflowQueueMetrics(
         default=0,
         ge=0,
     )
+
+    observation_window_seconds: float = Field(
+        default=300.0,
+        ge=1.0,
+        le=86400.0,
+    )
+
+    terminal_in_window: int = Field(default=0, ge=0)
+    completed_in_window: int = Field(default=0, ge=0)
+    failed_in_window: int = Field(default=0, ge=0)
+    dead_lettered_in_window: int = Field(default=0, ge=0)
+    cancelled_in_window: int = Field(default=0, ge=0)
+    throughput_per_minute: float = Field(default=0.0, ge=0.0)
+    success_throughput_per_minute: float = Field(default=0.0, ge=0.0)
+    queue_latency_samples: int = Field(default=0, ge=0)
+    queue_latency_seconds_average: float | None = Field(default=None, ge=0.0)
+    queue_latency_seconds_max: float | None = Field(default=None, ge=0.0)
+    execution_duration_samples: int = Field(default=0, ge=0)
+    execution_duration_seconds_average: float | None = Field(default=None, ge=0.0)
+    execution_duration_seconds_max: float | None = Field(default=None, ge=0.0)
+    oldest_ready_age_seconds: float | None = Field(default=None, ge=0.0)
+    archived_job_count: int = Field(default=0, ge=0)
+    dlq_replayed_total: int = Field(default=0, ge=0)
+    archived_jobs_total: int = Field(default=0, ge=0)
 
     worker_status_counts: dict[
         str,
@@ -531,3 +561,104 @@ class WorkflowWorkerControlResponse(
     message: str = "success"
 
     data: WorkflowWorkerInfo
+
+class WorkflowDeadLetterReplayRequest(BaseModel):
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_ids: list[str] = Field(
+        min_length=1,
+        max_length=100,
+    )
+    reset_attempts: bool = True
+    priority: int | None = Field(default=None, ge=-100, le=100)
+    max_attempts: int | None = Field(default=None, ge=1, le=10)
+    retry_base_seconds: float | None = Field(default=None, ge=0.01, le=3600.0)
+    timeout_seconds: float | None = Field(default=None, ge=0.1, le=86400.0)
+
+
+class WorkflowDeadLetterReplaySkipped(BaseModel):
+
+    run_id: str
+    reason: str
+
+
+class WorkflowDeadLetterReplayResult(BaseModel):
+
+    requested_count: int = Field(ge=0)
+    replayed_count: int = Field(ge=0)
+    skipped_count: int = Field(ge=0)
+    replayed_run_ids: list[str] = Field(default_factory=list)
+    skipped: list[WorkflowDeadLetterReplaySkipped] = Field(default_factory=list)
+
+
+class WorkflowDeadLetterReplayResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: WorkflowDeadLetterReplayResult
+
+
+class WorkflowQueueArchiveRequest(BaseModel):
+
+    model_config = ConfigDict(extra="forbid")
+
+    older_than_seconds: float = Field(default=604800.0, ge=0.0, le=315360000.0)
+    limit: int = Field(default=500, ge=1, le=5000)
+    include_dead_letter: bool = False
+    dry_run: bool = True
+
+
+class WorkflowQueueArchiveResult(BaseModel):
+
+    dry_run: bool
+    candidate_count: int = Field(ge=0)
+    archived_count: int = Field(ge=0)
+    run_ids: list[str] = Field(default_factory=list)
+
+
+class WorkflowQueueArchiveResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: WorkflowQueueArchiveResult
+
+
+class WorkflowArchivedJobEntry(BaseModel):
+
+    run_id: str
+    user_id: str
+    novel_id: str
+    queue_status: str
+    terminal_at: str
+    archived_at: str
+
+
+class WorkflowArchivedJobListResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: list[WorkflowArchivedJobEntry] = Field(default_factory=list)
+
+
+class WorkflowWorkerClusterHealth(BaseModel):
+
+    health_status: Literal["healthy", "degraded", "unavailable"]
+    total_workers: int = Field(ge=0)
+    running_workers: int = Field(ge=0)
+    stale_workers: int = Field(ge=0)
+    paused_workers: int = Field(ge=0)
+    draining_workers: int = Field(ge=0)
+    accepting_workers: int = Field(ge=0)
+    total_capacity: int = Field(ge=0)
+    active_count: int = Field(ge=0)
+    available_slots: int = Field(ge=0)
+    utilization: float = Field(ge=0.0)
+    ready_count: int = Field(ge=0)
+
+
+class WorkflowWorkerClusterHealthResponse(BaseModel):
+
+    code: int = 0
+    message: str = "success"
+    data: WorkflowWorkerClusterHealth

@@ -1678,6 +1678,8 @@ class WorkflowAsyncQueue:
         max_attempts: int | None = None,
         retry_base_seconds: float
         | None = None,
+        timeout_seconds: float
+        | None = None,
     ) -> dict[str, Any]:
 
         now = _utc_now()
@@ -1758,6 +1760,18 @@ class WorkflowAsyncQueue:
                 )
             )
 
+            normalized_timeout = (
+                float(
+                    row[
+                        "timeout_seconds"
+                    ]
+                )
+                if timeout_seconds is None
+                else self._normalize_timeout(
+                    timeout_seconds
+                )
+            )
+
             attempt_count = (
                 0
                 if reset_attempts
@@ -1775,6 +1789,7 @@ class WorkflowAsyncQueue:
                     attempt_count = ?,
                     max_attempts = ?,
                     retry_base_seconds = ?,
+                    timeout_seconds = ?,
                     available_at = ?,
                     last_error = NULL,
                     dead_lettered_at = NULL,
@@ -1791,6 +1806,7 @@ class WorkflowAsyncQueue:
                     attempt_count,
                     normalized_max_attempts,
                     normalized_retry_base,
+                    normalized_timeout,
                     now,
                     now,
                     run_id,
@@ -1857,6 +1873,9 @@ class WorkflowAsyncQueue:
                     ),
                     "retry_base_seconds": (
                         normalized_retry_base
+                    ),
+                    "timeout_seconds": (
+                        normalized_timeout
                     ),
                 },
             )
@@ -3150,6 +3169,746 @@ class WorkflowAsyncQueue:
                     "timeout_failures",
                     0,
                 ),
+            }
+        )
+
+        return metrics
+
+    _init_db_d9_base = _init_db
+    _queue_metrics_d9_base = queue_metrics
+
+    def _init_db(
+        self,
+    ) -> None:
+
+        self._init_db_d9_base()
+
+        with self._connect() as conn:
+
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS
+                workflow_job_archive (
+                    run_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    novel_id TEXT NOT NULL,
+                    queue_status TEXT NOT NULL,
+                    terminal_at TEXT NOT NULL,
+                    archived_at TEXT NOT NULL,
+                    snapshot_json TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                idx_workflow_job_archive_time
+                ON workflow_job_archive(
+                    archived_at,
+                    queue_status
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                idx_workflow_job_archive_user
+                ON workflow_job_archive(
+                    user_id,
+                    novel_id,
+                    archived_at
+                );
+                """
+            )
+
+            conn.commit()
+
+    @staticmethod
+    def _d9_parse_time(
+        value: str | None,
+    ) -> datetime | None:
+
+        if not value:
+            return None
+
+        try:
+            parsed = datetime.fromisoformat(
+                value
+            )
+        except ValueError:
+            return None
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(
+                tzinfo=timezone.utc
+            )
+
+        return parsed
+
+    @staticmethod
+    def _d9_duration_seconds(
+        start: str | None,
+        end: str | None,
+    ) -> float | None:
+
+        start_dt = WorkflowAsyncQueue._d9_parse_time(
+            start
+        )
+        end_dt = WorkflowAsyncQueue._d9_parse_time(
+            end
+        )
+
+        if start_dt is None or end_dt is None:
+            return None
+
+        return max(
+            (end_dt - start_dt).total_seconds(),
+            0.0,
+        )
+
+    def replay_dead_letters(
+        self,
+        run_ids: list[str],
+        *,
+        reset_attempts: bool = True,
+        priority: int | None = None,
+        max_attempts: int | None = None,
+        retry_base_seconds: float | None = None,
+        timeout_seconds: float | None = None,
+        max_batch_size: int | None = None,
+        max_queued_jobs: int | None = None,
+        max_active_per_user: int | None = None,
+    ) -> dict[str, Any]:
+
+        batch_limit = max(
+            int(
+                max_batch_size
+                if max_batch_size is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_DLQ_REPLAY_BATCH_MAX",
+                    "100",
+                )
+            ),
+            1,
+        )
+
+        ordered_ids: list[str] = []
+        seen: set[str] = set()
+
+        for raw_run_id in run_ids:
+            run_id = str(raw_run_id).strip()
+            if run_id and run_id not in seen:
+                ordered_ids.append(run_id)
+                seen.add(run_id)
+
+        if not ordered_ids:
+            raise ValueError(
+                "At least one workflow run ID is required."
+            )
+
+        if len(ordered_ids) > batch_limit:
+            raise ValueError(
+                "Dead-letter replay batch exceeds "
+                f"the configured limit of {batch_limit}."
+            )
+
+        queue_limit = max(
+            int(
+                max_queued_jobs
+                if max_queued_jobs is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_MAX_QUEUED_JOBS",
+                    "1000",
+                )
+            ),
+            0,
+        )
+
+        user_limit = max(
+            int(
+                max_active_per_user
+                if max_active_per_user is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_MAX_ACTIVE_PER_USER",
+                    "8",
+                )
+            ),
+            0,
+        )
+
+        replayed: list[str] = []
+        skipped: list[dict[str, str]] = []
+
+        for run_id in ordered_ids:
+
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT jobs.queue_status,
+                           runs.user_id
+                    FROM workflow_run_jobs AS jobs
+                    JOIN workflow_runs AS runs
+                      ON runs.run_id = jobs.run_id
+                    WHERE jobs.run_id = ?
+                    """,
+                    (run_id,),
+                ).fetchone()
+
+                if row is None:
+                    skipped.append(
+                        {
+                            "run_id": run_id,
+                            "reason": "not_found",
+                        }
+                    )
+                    continue
+
+                if row["queue_status"] != "dead_letter":
+                    skipped.append(
+                        {
+                            "run_id": run_id,
+                            "reason": "not_dead_letter",
+                        }
+                    )
+                    continue
+
+                if queue_limit > 0:
+                    waiting = int(
+                        conn.execute(
+                            """
+                            SELECT COUNT(*) AS count
+                            FROM workflow_run_jobs
+                            WHERE queue_status IN (
+                                'queued',
+                                'retry_wait'
+                            )
+                            """
+                        ).fetchone()["count"]
+                    )
+
+                    if waiting >= queue_limit:
+                        skipped.append(
+                            {
+                                "run_id": run_id,
+                                "reason": "queue_full",
+                            }
+                        )
+                        continue
+
+                if user_limit > 0:
+                    active = int(
+                        conn.execute(
+                            """
+                            SELECT COUNT(*) AS count
+                            FROM workflow_run_jobs AS jobs
+                            JOIN workflow_runs AS runs
+                              ON runs.run_id = jobs.run_id
+                            WHERE runs.user_id = ?
+                              AND jobs.queue_status IN (
+                                  'queued',
+                                  'retry_wait',
+                                  'running',
+                                  'cancelling'
+                              )
+                            """,
+                            (row["user_id"],),
+                        ).fetchone()["count"]
+                    )
+
+                    if active >= user_limit:
+                        skipped.append(
+                            {
+                                "run_id": run_id,
+                                "reason": "user_quota_exceeded",
+                            }
+                        )
+                        continue
+
+            self.retry_run(
+                run_id,
+                reset_attempts=reset_attempts,
+                priority=priority,
+                max_attempts=max_attempts,
+                retry_base_seconds=retry_base_seconds,
+                timeout_seconds=timeout_seconds,
+            )
+
+            replayed.append(run_id)
+
+        if replayed:
+            with self._connect() as conn:
+                self._increment_counter(
+                    conn,
+                    "dlq_replayed",
+                    len(replayed),
+                )
+                conn.commit()
+
+        return {
+            "requested_count": len(ordered_ids),
+            "replayed_count": len(replayed),
+            "skipped_count": len(skipped),
+            "replayed_run_ids": replayed,
+            "skipped": skipped,
+        }
+
+    def archive_terminal_jobs(
+        self,
+        *,
+        older_than_seconds: float = 604800.0,
+        limit: int = 500,
+        include_dead_letter: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+
+        age = float(older_than_seconds)
+        if not 0.0 <= age <= 315360000.0:
+            raise ValueError(
+                "Archive age must be between 0 and 315360000 seconds."
+            )
+
+        normalized_limit = min(
+            max(int(limit), 1),
+            5000,
+        )
+
+        cutoff = (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=age)
+        ).isoformat()
+
+        statuses = [
+            "completed",
+            "cancelled",
+            "failed",
+        ]
+        if include_dead_letter:
+            statuses.append("dead_letter")
+
+        placeholders = ",".join(
+            "?" for _ in statuses
+        )
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT jobs.*,
+                       runs.user_id,
+                       runs.novel_id,
+                       runs.completed_at
+                FROM workflow_run_jobs AS jobs
+                JOIN workflow_runs AS runs
+                  ON runs.run_id = jobs.run_id
+                WHERE jobs.queue_status IN (
+                    {placeholders}
+                )
+                  AND COALESCE(
+                      runs.completed_at,
+                      jobs.updated_at
+                  ) <= ?
+                ORDER BY COALESCE(
+                    runs.completed_at,
+                    jobs.updated_at
+                ) ASC
+                LIMIT ?
+                """,
+                (
+                    *statuses,
+                    cutoff,
+                    normalized_limit,
+                ),
+            ).fetchall()
+
+        candidate_ids = [
+            row["run_id"] for row in rows
+        ]
+
+        if dry_run or not rows:
+            return {
+                "dry_run": bool(dry_run),
+                "candidate_count": len(rows),
+                "archived_count": 0,
+                "run_ids": candidate_ids,
+            }
+
+        archived: list[str] = []
+        archived_at = _utc_now()
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+
+            for row in rows:
+                run_id = row["run_id"]
+                terminal_at = (
+                    row["completed_at"]
+                    or row["updated_at"]
+                )
+                snapshot = dict(row)
+
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO
+                    workflow_job_archive (
+                        run_id,
+                        user_id,
+                        novel_id,
+                        queue_status,
+                        terminal_at,
+                        archived_at,
+                        snapshot_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        row["user_id"],
+                        row["novel_id"],
+                        row["queue_status"],
+                        terminal_at,
+                        archived_at,
+                        _json_dumps(snapshot),
+                    ),
+                )
+
+                WorkflowRunStorage._insert_event(
+                    conn,
+                    run_id=run_id,
+                    sequence_no=self._next_sequence(
+                        conn,
+                        run_id,
+                    ),
+                    event_type="queue_job_archived",
+                    payload={
+                        "queue_status": row["queue_status"],
+                        "terminal_at": terminal_at,
+                        "archived_at": archived_at,
+                    },
+                )
+
+                deleted = conn.execute(
+                    """
+                    DELETE FROM workflow_run_jobs
+                    WHERE run_id = ?
+                      AND queue_status = ?
+                    """,
+                    (
+                        run_id,
+                        row["queue_status"],
+                    ),
+                ).rowcount
+
+                if deleted:
+                    archived.append(run_id)
+
+            if archived:
+                self._increment_counter(
+                    conn,
+                    "archived_jobs",
+                    len(archived),
+                )
+
+            conn.commit()
+
+        return {
+            "dry_run": False,
+            "candidate_count": len(rows),
+            "archived_count": len(archived),
+            "run_ids": archived,
+        }
+
+    def list_archived_jobs(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+
+        normalized_limit = min(
+            max(int(limit), 1),
+            500,
+        )
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT run_id,
+                       user_id,
+                       novel_id,
+                       queue_status,
+                       terminal_at,
+                       archived_at
+                FROM workflow_job_archive
+                ORDER BY archived_at DESC,
+                         terminal_at DESC
+                LIMIT ?
+                """,
+                (normalized_limit,),
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    def worker_cluster_health(
+        self,
+        *,
+        stale_after_seconds: float = 90.0,
+    ) -> dict[str, Any]:
+
+        workers = self.list_workers(
+            stale_after_seconds=stale_after_seconds
+        )
+
+        total_workers = len(workers)
+        running_workers = sum(
+            1 for item in workers
+            if item["worker_status"] == "running"
+        )
+        stale_workers = sum(
+            1 for item in workers
+            if item["worker_status"] == "stale"
+        )
+        paused_workers = sum(
+            1 for item in workers
+            if item.get("control_mode") == "paused"
+        )
+        draining_workers = sum(
+            1 for item in workers
+            if item.get("control_mode") == "draining"
+        )
+        accepting_workers = sum(
+            1 for item in workers
+            if item.get("accepting_work") is True
+        )
+
+        total_capacity = sum(
+            int(item.get("capacity", 0))
+            for item in workers
+            if item["worker_status"] == "running"
+        )
+        active_count = sum(
+            int(item.get("active_count", 0))
+            for item in workers
+            if item["worker_status"] == "running"
+        )
+        available_slots = max(
+            total_capacity - active_count,
+            0,
+        )
+
+        with self._connect() as conn:
+            ready_count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM workflow_run_jobs
+                    WHERE queue_status IN (
+                        'queued',
+                        'retry_wait'
+                    )
+                      AND available_at <= ?
+                    """,
+                    (_utc_now(),),
+                ).fetchone()["count"]
+            )
+
+        if running_workers == 0:
+            health_status = "unavailable"
+        elif accepting_workers == 0:
+            health_status = "degraded"
+        else:
+            health_status = "healthy"
+
+        utilization = (
+            float(active_count) / float(total_capacity)
+            if total_capacity > 0
+            else 0.0
+        )
+
+        return {
+            "health_status": health_status,
+            "total_workers": total_workers,
+            "running_workers": running_workers,
+            "stale_workers": stale_workers,
+            "paused_workers": paused_workers,
+            "draining_workers": draining_workers,
+            "accepting_workers": accepting_workers,
+            "total_capacity": total_capacity,
+            "active_count": active_count,
+            "available_slots": available_slots,
+            "utilization": utilization,
+            "ready_count": ready_count,
+        }
+
+    def queue_metrics(
+        self,
+        *,
+        worker_stale_after_seconds: float = 90.0,
+        max_queued_jobs: int | None = None,
+        max_active_per_user: int | None = None,
+        default_timeout_seconds: float | None = None,
+        window_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+
+        metrics = self._queue_metrics_d9_base(
+            worker_stale_after_seconds=(
+                worker_stale_after_seconds
+            ),
+            max_queued_jobs=max_queued_jobs,
+            max_active_per_user=max_active_per_user,
+            default_timeout_seconds=(
+                default_timeout_seconds
+            ),
+        )
+
+        window = min(
+            max(float(window_seconds), 1.0),
+            86400.0,
+        )
+        now_dt = datetime.now(timezone.utc)
+        cutoff = (
+            now_dt - timedelta(seconds=window)
+        ).isoformat()
+        now = now_dt.isoformat()
+
+        with self._connect() as conn:
+            terminal_rows = conn.execute(
+                """
+                SELECT queue_status,
+                       queued_at,
+                       claimed_at,
+                       updated_at
+                FROM workflow_run_jobs
+                WHERE queue_status IN (
+                    'completed',
+                    'cancelled',
+                    'failed',
+                    'dead_letter'
+                )
+                  AND updated_at >= ?
+                """,
+                (cutoff,),
+            ).fetchall()
+
+            claim_rows = conn.execute(
+                """
+                SELECT queued_at,
+                       claimed_at,
+                       updated_at,
+                       queue_status
+                FROM workflow_run_jobs
+                WHERE claimed_at IS NOT NULL
+                  AND claimed_at >= ?
+                """,
+                (cutoff,),
+            ).fetchall()
+
+            oldest_ready = conn.execute(
+                """
+                SELECT MIN(queued_at) AS oldest
+                FROM workflow_run_jobs
+                WHERE queue_status IN (
+                    'queued',
+                    'retry_wait'
+                )
+                  AND available_at <= ?
+                """,
+                (now,),
+            ).fetchone()["oldest"]
+
+            archive_count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM workflow_job_archive
+                    """
+                ).fetchone()["count"]
+            )
+
+            counter_rows = conn.execute(
+                """
+                SELECT counter_name, counter_value
+                FROM workflow_queue_counters
+                WHERE counter_name IN (
+                    'dlq_replayed',
+                    'archived_jobs'
+                )
+                """
+            ).fetchall()
+
+        status_window: dict[str, int] = {}
+        for row in terminal_rows:
+            status_window[row["queue_status"]] = (
+                status_window.get(row["queue_status"], 0)
+                + 1
+            )
+
+        terminal_count = sum(status_window.values())
+        completed_count = status_window.get("completed", 0)
+
+        queue_latencies = [
+            value
+            for value in (
+                self._d9_duration_seconds(
+                    row["queued_at"],
+                    row["claimed_at"],
+                )
+                for row in claim_rows
+            )
+            if value is not None
+        ]
+
+        execution_durations = [
+            value
+            for value in (
+                self._d9_duration_seconds(
+                    row["claimed_at"],
+                    row["updated_at"],
+                )
+                for row in terminal_rows
+                if row["claimed_at"] is not None
+            )
+            if value is not None
+        ]
+
+        oldest_ready_age = None
+        oldest_dt = self._d9_parse_time(oldest_ready)
+        if oldest_dt is not None:
+            oldest_ready_age = max(
+                (now_dt - oldest_dt).total_seconds(),
+                0.0,
+            )
+
+        counters = {
+            row["counter_name"]: int(row["counter_value"])
+            for row in counter_rows
+        }
+
+        per_minute_factor = 60.0 / window
+
+        metrics.update(
+            {
+                "observation_window_seconds": window,
+                "terminal_in_window": terminal_count,
+                "completed_in_window": completed_count,
+                "failed_in_window": status_window.get("failed", 0),
+                "dead_lettered_in_window": status_window.get("dead_letter", 0),
+                "cancelled_in_window": status_window.get("cancelled", 0),
+                "throughput_per_minute": terminal_count * per_minute_factor,
+                "success_throughput_per_minute": completed_count * per_minute_factor,
+                "queue_latency_samples": len(queue_latencies),
+                "queue_latency_seconds_average": (
+                    sum(queue_latencies) / len(queue_latencies)
+                    if queue_latencies else None
+                ),
+                "queue_latency_seconds_max": (
+                    max(queue_latencies)
+                    if queue_latencies else None
+                ),
+                "execution_duration_samples": len(execution_durations),
+                "execution_duration_seconds_average": (
+                    sum(execution_durations) / len(execution_durations)
+                    if execution_durations else None
+                ),
+                "execution_duration_seconds_max": (
+                    max(execution_durations)
+                    if execution_durations else None
+                ),
+                "oldest_ready_age_seconds": oldest_ready_age,
+                "archived_job_count": archive_count,
+                "dlq_replayed_total": counters.get("dlq_replayed", 0),
+                "archived_jobs_total": counters.get("archived_jobs", 0),
             }
         )
 

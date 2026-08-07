@@ -37,6 +37,14 @@ from app.workflows.run_schemas import (
 from app.workflows.run_service import (
     WorkflowRunService,
 )
+from app.workflows.run_schemas import (
+    WorkflowArchivedJobListResponse,
+    WorkflowDeadLetterReplayRequest,
+    WorkflowDeadLetterReplayResponse,
+    WorkflowQueueArchiveRequest,
+    WorkflowQueueArchiveResponse,
+    WorkflowWorkerClusterHealthResponse,
+)
 from app.workflows.schemas import (
     ChapterWorkflowRequest,
     ChapterWorkflowResponse,
@@ -495,6 +503,9 @@ async def retry_workflow_run(
                 payload
                 .retry_base_seconds
             ),
+            timeout_seconds=(
+                payload.timeout_seconds
+            ),
         )
 
     except KeyError as exc:
@@ -533,6 +544,11 @@ async def get_workflow_queue_metrics(
         ge=1.0,
         le=3600.0,
     ),
+    window_seconds: float = Query(
+        default=300.0,
+        ge=1.0,
+        le=86400.0,
+    ),
 ) -> WorkflowQueueMetricsResponse:
 
     executor = _async_executor(
@@ -545,7 +561,8 @@ async def get_workflow_queue_metrics(
         .queue_metrics(
             worker_stale_after_seconds=(
                 worker_stale_after_seconds
-            )
+            ),
+            window_seconds=window_seconds,
         )
     )
 
@@ -681,3 +698,94 @@ async def drain_workflow_worker(
         request,
         "draining",
     )
+
+@router.post(
+    "/dead-letter/replay",
+    response_model=WorkflowDeadLetterReplayResponse,
+)
+async def replay_workflow_dead_letters(
+    payload: WorkflowDeadLetterReplayRequest,
+    request: Request,
+) -> WorkflowDeadLetterReplayResponse:
+
+    executor = _async_executor(request)
+
+    try:
+        result = executor.queue.replay_dead_letters(
+            payload.run_ids,
+            reset_attempts=payload.reset_attempts,
+            priority=payload.priority,
+            max_attempts=payload.max_attempts,
+            retry_base_seconds=payload.retry_base_seconds,
+            timeout_seconds=payload.timeout_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    executor.ensure_started()
+
+    return WorkflowDeadLetterReplayResponse(data=result)
+
+
+@router.post(
+    "/queue/archive",
+    response_model=WorkflowQueueArchiveResponse,
+)
+async def archive_workflow_queue_jobs(
+    payload: WorkflowQueueArchiveRequest,
+    request: Request,
+) -> WorkflowQueueArchiveResponse:
+
+    executor = _async_executor(request)
+
+    try:
+        result = executor.queue.archive_terminal_jobs(
+            older_than_seconds=payload.older_than_seconds,
+            limit=payload.limit,
+            include_dead_letter=payload.include_dead_letter,
+            dry_run=payload.dry_run,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowQueueArchiveResponse(data=result)
+
+
+@router.get(
+    "/queue/archive",
+    response_model=WorkflowArchivedJobListResponse,
+)
+async def list_workflow_queue_archive(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> WorkflowArchivedJobListResponse:
+
+    executor = _async_executor(request)
+    entries = executor.queue.list_archived_jobs(limit=limit)
+    return WorkflowArchivedJobListResponse(data=entries)
+
+
+@router.get(
+    "/workers/health",
+    response_model=WorkflowWorkerClusterHealthResponse,
+)
+async def get_workflow_worker_cluster_health(
+    request: Request,
+    stale_after_seconds: float = Query(
+        default=90.0,
+        ge=1.0,
+        le=3600.0,
+    ),
+) -> WorkflowWorkerClusterHealthResponse:
+
+    executor = _async_executor(request)
+    health = executor.queue.worker_cluster_health(
+        stale_after_seconds=stale_after_seconds
+    )
+    return WorkflowWorkerClusterHealthResponse(data=health)
