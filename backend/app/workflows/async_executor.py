@@ -36,6 +36,9 @@ class AsyncWorkflowExecutor:
         heartbeat_seconds: float | None = None,
         max_retry_delay_seconds: float
         | None = None,
+        max_queued_jobs: int | None = None,
+        max_active_per_user: int | None = None,
+        default_timeout_seconds: float | None = None,
         poll_interval: float = 0.25,
         execution_mode: str | None = None,
     ) -> None:
@@ -113,6 +116,43 @@ class AsyncWorkflowExecutor:
                 )
             ),
             0.01,
+        )
+
+        self._max_queued_jobs = max(
+            int(
+                max_queued_jobs
+                if max_queued_jobs is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_MAX_QUEUED_JOBS",
+                    "1000",
+                )
+            ),
+            0,
+        )
+
+        self._max_active_per_user = max(
+            int(
+                max_active_per_user
+                if max_active_per_user is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_MAX_ACTIVE_PER_USER",
+                    "8",
+                )
+            ),
+            0,
+        )
+
+        self._default_timeout_seconds = (
+            self._queue._normalize_timeout(
+                default_timeout_seconds
+                if default_timeout_seconds is not None
+                else float(
+                    os.getenv(
+                        "NOVELFORGE_WORKFLOW_TIMEOUT_SECONDS",
+                        "900",
+                    )
+                )
+            )
         )
 
         self._poll_interval = max(
@@ -243,6 +283,7 @@ class AsyncWorkflowExecutor:
         priority: int = 0,
         max_attempts: int = 3,
         retry_base_seconds: float = 2.0,
+        timeout_seconds: float | None = None,
     ) -> WorkflowAsyncSubmission:
 
         run_id, deduplicated = (
@@ -257,6 +298,17 @@ class AsyncWorkflowExecutor:
                 ),
                 retry_base_seconds=(
                     retry_base_seconds
+                ),
+                timeout_seconds=(
+                    self._default_timeout_seconds
+                    if timeout_seconds is None
+                    else timeout_seconds
+                ),
+                max_queued_jobs=(
+                    self._max_queued_jobs
+                ),
+                max_active_per_user=(
+                    self._max_active_per_user
                 ),
             )
         )
@@ -505,6 +557,18 @@ class AsyncWorkflowExecutor:
 
                 self._queue.recover_stale()
 
+                worker_control = (
+                    self._queue.get_worker_control(
+                        self._worker_id
+                    )
+                )
+
+                accepting_work = bool(
+                    worker_control[
+                        "accepting_work"
+                    ]
+                )
+
                 for run_id, task in list(
                     self._active.items()
                 ):
@@ -517,7 +581,8 @@ class AsyncWorkflowExecutor:
                         )
 
                 while (
-                    len(
+                    accepting_work
+                    and len(
                         self._active
                     )
                     < self._max_concurrency
@@ -640,10 +705,21 @@ class AsyncWorkflowExecutor:
 
         try:
 
-            result = await ChapterWorkflow(
-                self._agent_manager
-            ).run(
-                request
+            control = self._queue.get_control(
+                run_id
+            )
+
+            timeout_seconds = float(
+                control["timeout_seconds"]
+            )
+
+            result = await asyncio.wait_for(
+                ChapterWorkflow(
+                    self._agent_manager
+                ).run(
+                    request
+                ),
+                timeout=timeout_seconds,
             )
 
             if (
@@ -708,6 +784,28 @@ class AsyncWorkflowExecutor:
 
             self._queue.mark_terminal(
                 run_id
+            )
+
+        except TimeoutError:
+
+            error = (
+                "Workflow attempt timed out "
+                f"after {timeout_seconds:g} seconds."
+            )
+
+            self._queue.record_timeout(
+                run_id,
+                worker_id=self._worker_id,
+                error=error,
+            )
+
+            self._queue.handle_failure(
+                run_id,
+                worker_id=self._worker_id,
+                error=error,
+                max_retry_delay_seconds=(
+                    self._max_retry_delay_seconds
+                ),
             )
 
         except asyncio.CancelledError:

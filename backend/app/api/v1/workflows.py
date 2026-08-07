@@ -16,6 +16,9 @@ from app.agents.bootstrap import (
 from app.workflows.async_executor import (
     AsyncWorkflowExecutor,
 )
+from app.workflows.async_queue import (
+    WorkflowAdmissionError,
+)
 
 from app.workflows.chapter_workflow import (
     ChapterWorkflow,
@@ -28,6 +31,7 @@ from app.workflows.run_schemas import (
     WorkflowResumeRequest,
     WorkflowRunListResponse,
     WorkflowRunResponse,
+    WorkflowWorkerControlResponse,
     WorkflowWorkerListResponse,
 )
 from app.workflows.run_service import (
@@ -288,6 +292,15 @@ async def enqueue_chapter_workflow_run(
         ge=0.01,
         le=3600.0,
     ),
+    timeout_seconds: float | None = Header(
+        default=None,
+        alias=(
+            "X-Workflow-"
+            "Timeout-Seconds"
+        ),
+        ge=0.1,
+        le=86400.0,
+    ),
 ) -> WorkflowAsyncSubmissionResponse:
 
     executor = _async_executor(
@@ -308,7 +321,27 @@ async def enqueue_chapter_workflow_run(
             retry_base_seconds=(
                 retry_base_seconds
             ),
+            timeout_seconds=(
+                timeout_seconds
+            ),
         )
+
+    except WorkflowAdmissionError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_429_TOO_MANY_REQUESTS
+            ),
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+            },
+            headers={
+                "Retry-After": str(
+                    exc.retry_after_seconds
+                )
+            },
+        ) from exc
 
     except ValueError as exc:
 
@@ -550,4 +583,101 @@ async def list_workflow_dead_letters(
 
     return WorkflowDeadLetterListResponse(
         data=entries
+    )
+
+async def _set_workflow_worker_control(
+    worker_id: str,
+    request: Request,
+    control_mode: str,
+) -> WorkflowWorkerControlResponse:
+
+    executor = _async_executor(
+        request
+    )
+
+    try:
+
+        worker = (
+            executor
+            .queue
+            .set_worker_control(
+                worker_id,
+                control_mode=control_mode,
+            )
+        )
+
+    except KeyError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=str(exc),
+        ) from exc
+
+    return WorkflowWorkerControlResponse(
+        data=worker
+    )
+
+
+@router.post(
+    "/workers/{worker_id}/pause",
+    response_model=(
+        WorkflowWorkerControlResponse
+    ),
+)
+async def pause_workflow_worker(
+    worker_id: str,
+    request: Request,
+) -> WorkflowWorkerControlResponse:
+
+    return await _set_workflow_worker_control(
+        worker_id,
+        request,
+        "paused",
+    )
+
+
+@router.post(
+    "/workers/{worker_id}/resume",
+    response_model=(
+        WorkflowWorkerControlResponse
+    ),
+)
+async def resume_workflow_worker(
+    worker_id: str,
+    request: Request,
+) -> WorkflowWorkerControlResponse:
+
+    return await _set_workflow_worker_control(
+        worker_id,
+        request,
+        "running",
+    )
+
+
+@router.post(
+    "/workers/{worker_id}/drain",
+    response_model=(
+        WorkflowWorkerControlResponse
+    ),
+)
+async def drain_workflow_worker(
+    worker_id: str,
+    request: Request,
+) -> WorkflowWorkerControlResponse:
+
+    return await _set_workflow_worker_control(
+        worker_id,
+        request,
+        "draining",
     )

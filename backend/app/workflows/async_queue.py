@@ -23,6 +23,38 @@ from app.workflows.storage import (
 )
 
 
+class WorkflowAdmissionError(RuntimeError):
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        retry_after_seconds: int = 1,
+    ) -> None:
+
+        super().__init__(message)
+        self.code = code
+        self.retry_after_seconds = max(
+            int(retry_after_seconds),
+            1,
+        )
+
+
+class WorkflowQueueFullError(
+    WorkflowAdmissionError
+):
+
+    pass
+
+
+class WorkflowUserQuotaError(
+    WorkflowAdmissionError
+):
+
+    pass
+
+
 class WorkflowAsyncQueue:
     """
     SQLite-backed queue for persisted
@@ -387,6 +419,9 @@ class WorkflowAsyncQueue:
         priority: int = 0,
         max_attempts: int = 3,
         retry_base_seconds: float = 2.0,
+        timeout_seconds: float = 900.0,
+        max_queued_jobs: int = 1000,
+        max_active_per_user: int = 8,
     ) -> tuple[
         str,
         bool,
@@ -414,6 +449,22 @@ class WorkflowAsyncQueue:
             self._normalize_retry_base(
                 retry_base_seconds
             )
+        )
+
+        normalized_timeout = (
+            self._normalize_timeout(
+                timeout_seconds
+            )
+        )
+
+        normalized_queue_limit = max(
+            int(max_queued_jobs),
+            0,
+        )
+
+        normalized_user_limit = max(
+            int(max_active_per_user),
+            0,
         )
 
         run_id = str(
@@ -454,6 +505,67 @@ class WorkflowAsyncQueue:
                     return (
                         existing["run_id"],
                         True,
+                    )
+
+            if normalized_queue_limit > 0:
+
+                queued_count = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) AS count
+                        FROM workflow_run_jobs
+                        WHERE queue_status IN (
+                            'queued',
+                            'retry_wait'
+                        )
+                        """
+                    ).fetchone()["count"]
+                )
+
+                if queued_count >= normalized_queue_limit:
+
+                    self._increment_counter(
+                        conn,
+                        "queue_full_rejections",
+                    )
+                    conn.commit()
+                    raise WorkflowQueueFullError(
+                        "Workflow queue is full.",
+                        code="queue_full",
+                    )
+
+            if normalized_user_limit > 0:
+
+                active_count = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) AS count
+                        FROM workflow_run_jobs AS jobs
+                        JOIN workflow_runs AS runs
+                            ON runs.run_id = jobs.run_id
+                        WHERE runs.user_id = ?
+                        AND jobs.queue_status IN (
+                            'queued',
+                            'retry_wait',
+                            'running',
+                            'cancelling'
+                        )
+                        """,
+                        (request.user_id,),
+                    ).fetchone()["count"]
+                )
+
+                if active_count >= normalized_user_limit:
+
+                    self._increment_counter(
+                        conn,
+                        "user_quota_rejections",
+                    )
+                    conn.commit()
+                    raise WorkflowUserQuotaError(
+                        "Workflow active-job quota "
+                        "was reached for this user.",
+                        code="user_quota_exceeded",
                     )
 
             conn.execute(
@@ -522,6 +634,8 @@ class WorkflowAsyncQueue:
                     attempt_count,
                     max_attempts,
                     retry_base_seconds,
+                    timeout_seconds,
+                    timed_out_count,
                     available_at,
                     last_error,
                     dead_lettered_at,
@@ -542,6 +656,8 @@ class WorkflowAsyncQueue:
                     ?,
                     ?,
                     ?,
+                    0,
+                    ?,
                     NULL,
                     NULL,
                     0,
@@ -559,6 +675,7 @@ class WorkflowAsyncQueue:
                     normalized_priority,
                     normalized_max_attempts,
                     normalized_retry_base,
+                    normalized_timeout,
                     now,
                     now,
                     now,
@@ -582,6 +699,15 @@ class WorkflowAsyncQueue:
                     ),
                     "retry_base_seconds": (
                         normalized_retry_base
+                    ),
+                    "timeout_seconds": (
+                        normalized_timeout
+                    ),
+                    "max_queued_jobs": (
+                        normalized_queue_limit
+                    ),
+                    "max_active_per_user": (
+                        normalized_user_limit
                     ),
                 },
             )
@@ -637,6 +763,12 @@ class WorkflowAsyncQueue:
             ),
             "retry_base_seconds": float(
                 row["retry_base_seconds"]
+            ),
+            "timeout_seconds": float(
+                row["timeout_seconds"]
+            ),
+            "timed_out_count": int(
+                row["timed_out_count"]
             ),
             "available_at": (
                 row["available_at"]
@@ -2516,3 +2648,509 @@ class WorkflowAsyncQueue:
             conn.commit()
 
         return recovered
+
+    _init_db_d7 = _init_db
+    _register_worker_d7 = register_worker
+    _heartbeat_worker_d7 = heartbeat_worker
+    _list_workers_d7 = list_workers
+    _queue_metrics_d7 = queue_metrics
+
+    def _init_db(
+        self,
+    ) -> None:
+
+        self._init_db_d7()
+
+        with self._connect() as conn:
+
+            job_columns = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(workflow_run_jobs)"
+                ).fetchall()
+            }
+
+            for name, definition in {
+                "timeout_seconds": (
+                    "REAL NOT NULL DEFAULT 900.0"
+                ),
+                "timed_out_count": (
+                    "INTEGER NOT NULL DEFAULT 0"
+                ),
+            }.items():
+
+                if name not in job_columns:
+                    conn.execute(
+                        "ALTER TABLE workflow_run_jobs "
+                        f"ADD COLUMN {name} {definition}"
+                    )
+
+            worker_columns = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(workflow_workers)"
+                ).fetchall()
+            }
+
+            for name, definition in {
+                "control_mode": (
+                    "TEXT NOT NULL DEFAULT 'running'"
+                ),
+                "control_updated_at": "TEXT",
+            }.items():
+
+                if name not in worker_columns:
+                    conn.execute(
+                        "ALTER TABLE workflow_workers "
+                        f"ADD COLUMN {name} {definition}"
+                    )
+
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS
+                workflow_queue_counters (
+                    counter_name TEXT PRIMARY KEY,
+                    counter_value INTEGER
+                        NOT NULL DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                idx_workflow_workers_control
+                ON workflow_workers(
+                    control_mode,
+                    heartbeat_at
+                );
+                """
+            )
+
+            conn.commit()
+
+    @staticmethod
+    def _normalize_timeout(
+        timeout_seconds: float,
+    ) -> float:
+
+        normalized = float(timeout_seconds)
+
+        if not 0.1 <= normalized <= 86400.0:
+            raise ValueError(
+                "Workflow timeout seconds must be "
+                "between 0.1 and 86400."
+            )
+
+        return normalized
+
+    @staticmethod
+    def _increment_counter(
+        conn: sqlite3.Connection,
+        counter_name: str,
+        amount: int = 1,
+    ) -> None:
+
+        conn.execute(
+            """
+            INSERT INTO workflow_queue_counters (
+                counter_name,
+                counter_value
+            )
+            VALUES (?, ?)
+            ON CONFLICT(counter_name)
+            DO UPDATE SET
+                counter_value =
+                    counter_value
+                    + excluded.counter_value
+            """,
+            (
+                counter_name,
+                max(int(amount), 0),
+            ),
+        )
+
+    def record_timeout(
+        self,
+        run_id: str,
+        *,
+        worker_id: str,
+        error: str,
+    ) -> bool:
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+
+            conn.execute("BEGIN IMMEDIATE")
+
+            row = conn.execute(
+                """
+                SELECT queue_status, lease_owner,
+                       timed_out_count
+                FROM workflow_run_jobs
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+
+            if (
+                row is None
+                or row["lease_owner"] != worker_id
+                or row["queue_status"] not in {
+                    "running",
+                    "cancelling",
+                }
+            ):
+                conn.rollback()
+                return False
+
+            timed_out_count = int(
+                row["timed_out_count"]
+            ) + 1
+
+            conn.execute(
+                """
+                UPDATE workflow_run_jobs
+                SET timed_out_count = ?,
+                    last_error = ?,
+                    updated_at = ?
+                WHERE run_id = ?
+                """,
+                (
+                    timed_out_count,
+                    error,
+                    now,
+                    run_id,
+                ),
+            )
+
+            self._increment_counter(
+                conn,
+                "timeout_failures",
+            )
+
+            WorkflowRunStorage._insert_event(
+                conn,
+                run_id=run_id,
+                sequence_no=self._next_sequence(
+                    conn,
+                    run_id,
+                ),
+                event_type="run_attempt_timed_out",
+                payload={
+                    "worker_id": worker_id,
+                    "timed_out_count": timed_out_count,
+                    "error": error,
+                },
+            )
+
+            conn.commit()
+
+        return True
+
+    def register_worker(
+        self,
+        worker_id: str,
+        *,
+        capacity: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+
+        self._register_worker_d7(
+            worker_id,
+            capacity=capacity,
+            metadata=metadata,
+        )
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE workflow_workers
+                SET control_mode = 'running',
+                    control_updated_at = ?
+                WHERE worker_id = ?
+                """,
+                (now, worker_id),
+            )
+            conn.commit()
+
+    def heartbeat_worker(
+        self,
+        worker_id: str,
+        *,
+        active_count: int,
+    ) -> bool:
+
+        alive = self._heartbeat_worker_d7(
+            worker_id,
+            active_count=active_count,
+        )
+
+        if not alive:
+            return False
+
+        if int(active_count) == 0:
+            now = _utc_now()
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE workflow_workers
+                    SET control_mode = 'paused',
+                        control_updated_at = ?
+                    WHERE worker_id = ?
+                    AND control_mode = 'draining'
+                    """,
+                    (now, worker_id),
+                )
+                conn.commit()
+
+        return True
+
+    def get_worker_control(
+        self,
+        worker_id: str,
+    ) -> dict[str, Any]:
+
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM workflow_workers
+                WHERE worker_id = ?
+                """,
+                (worker_id,),
+            ).fetchone()
+
+        if row is None:
+            raise KeyError(
+                f"Workflow worker not found: {worker_id}"
+            )
+
+        return {
+            "worker_id": row["worker_id"],
+            "worker_status": row["worker_status"],
+            "control_mode": row["control_mode"],
+            "accepting_work": (
+                row["worker_status"] == "running"
+                and row["control_mode"] == "running"
+            ),
+            "capacity": int(row["capacity"]),
+            "active_count": int(row["active_count"]),
+            "started_at": row["started_at"],
+            "heartbeat_at": row["heartbeat_at"],
+            "stopped_at": row["stopped_at"],
+            "control_updated_at": (
+                row["control_updated_at"]
+            ),
+            "metadata": json.loads(
+                row["metadata_json"] or "{}"
+            ),
+        }
+
+    def set_worker_control(
+        self,
+        worker_id: str,
+        *,
+        control_mode: str,
+    ) -> dict[str, Any]:
+
+        normalized = control_mode.strip().lower()
+
+        if normalized not in {
+            "running",
+            "paused",
+            "draining",
+        }:
+            raise ValueError(
+                "Worker control mode must be "
+                "running, paused, or draining."
+            )
+
+        now = _utc_now()
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT worker_status
+                FROM workflow_workers
+                WHERE worker_id = ?
+                """,
+                (worker_id,),
+            ).fetchone()
+
+            if row is None:
+                conn.rollback()
+                raise KeyError(
+                    f"Workflow worker not found: {worker_id}"
+                )
+
+            if row["worker_status"] in {
+                "stopped",
+                "stopping",
+            }:
+                conn.rollback()
+                raise ValueError(
+                    "Stopped or stopping workers "
+                    "cannot be controlled."
+                )
+
+            conn.execute(
+                """
+                UPDATE workflow_workers
+                SET control_mode = ?,
+                    control_updated_at = ?
+                WHERE worker_id = ?
+                """,
+                (
+                    normalized,
+                    now,
+                    worker_id,
+                ),
+            )
+            conn.commit()
+
+        return self.get_worker_control(worker_id)
+
+    def list_workers(
+        self,
+        *,
+        stale_after_seconds: float = 90.0,
+    ) -> list[dict[str, Any]]:
+
+        workers = self._list_workers_d7(
+            stale_after_seconds=stale_after_seconds,
+        )
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT worker_id, control_mode,
+                       control_updated_at
+                FROM workflow_workers
+                """
+            ).fetchall()
+
+        controls = {
+            row["worker_id"]: row
+            for row in rows
+        }
+
+        for worker in workers:
+            row = controls.get(worker["worker_id"])
+            mode = (
+                row["control_mode"]
+                if row is not None
+                else "running"
+            )
+            worker["control_mode"] = mode
+            worker["control_updated_at"] = (
+                row["control_updated_at"]
+                if row is not None
+                else None
+            )
+            worker["accepting_work"] = (
+                worker["worker_status"] == "running"
+                and mode == "running"
+            )
+
+        return workers
+
+    def queue_metrics(
+        self,
+        *,
+        worker_stale_after_seconds: float = 90.0,
+        max_queued_jobs: int | None = None,
+        max_active_per_user: int | None = None,
+        default_timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+
+        metrics = self._queue_metrics_d7(
+            worker_stale_after_seconds=(
+                worker_stale_after_seconds
+            )
+        )
+
+        queue_limit = max(
+            int(
+                max_queued_jobs
+                if max_queued_jobs is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_MAX_QUEUED_JOBS",
+                    "1000",
+                )
+            ),
+            0,
+        )
+
+        user_limit = max(
+            int(
+                max_active_per_user
+                if max_active_per_user is not None
+                else os.getenv(
+                    "NOVELFORGE_WORKFLOW_MAX_ACTIVE_PER_USER",
+                    "8",
+                )
+            ),
+            0,
+        )
+
+        timeout_default = self._normalize_timeout(
+            default_timeout_seconds
+            if default_timeout_seconds is not None
+            else float(
+                os.getenv(
+                    "NOVELFORGE_WORKFLOW_TIMEOUT_SECONDS",
+                    "900",
+                )
+            )
+        )
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT counter_name, counter_value
+                FROM workflow_queue_counters
+                """
+            ).fetchall()
+
+        counters = {
+            row["counter_name"]: int(
+                row["counter_value"]
+            )
+            for row in rows
+        }
+
+        waiting_count = int(
+            metrics["status_counts"].get("queued", 0)
+        ) + int(
+            metrics["status_counts"].get(
+                "retry_wait",
+                0,
+            )
+        )
+
+        metrics.update(
+            {
+                "max_queued_jobs": queue_limit,
+                "max_active_per_user": user_limit,
+                "default_timeout_seconds": timeout_default,
+                "backpressure_active": (
+                    queue_limit > 0
+                    and waiting_count >= queue_limit
+                ),
+                "queue_full_rejections": counters.get(
+                    "queue_full_rejections",
+                    0,
+                ),
+                "user_quota_rejections": counters.get(
+                    "user_quota_rejections",
+                    0,
+                ),
+                "timeout_failures": counters.get(
+                    "timeout_failures",
+                    0,
+                ),
+            }
+        )
+
+        return metrics

@@ -239,6 +239,17 @@ class WorkflowJobControl(BaseModel):
         le=3600.0,
     )
 
+    timeout_seconds: float = Field(
+        default=900.0,
+        ge=0.1,
+        le=86400.0,
+    )
+
+    timed_out_count: int = Field(
+        default=0,
+        ge=0,
+    )
+
     available_at: str
 
     last_error: str | None = None
@@ -314,6 +325,16 @@ class WorkflowWorkerInfo(BaseModel):
     heartbeat_at: str
 
     stopped_at: str | None = None
+
+    control_mode: Literal[
+        "running",
+        "paused",
+        "draining",
+    ] = "running"
+
+    accepting_work: bool = True
+
+    control_updated_at: str | None = None
 
     metadata: dict[str, Any] = Field(
         default_factory=dict
@@ -400,6 +421,39 @@ class WorkflowQueueMetrics(
 
     priority_average: float | None = None
 
+    max_queued_jobs: int = Field(
+        default=1000,
+        ge=0,
+    )
+
+    max_active_per_user: int = Field(
+        default=8,
+        ge=0,
+    )
+
+    default_timeout_seconds: float = Field(
+        default=900.0,
+        ge=0.1,
+        le=86400.0,
+    )
+
+    backpressure_active: bool = False
+
+    queue_full_rejections: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    user_quota_rejections: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    timeout_failures: int = Field(
+        default=0,
+        ge=0,
+    )
+
     worker_status_counts: dict[
         str,
         int,
@@ -467,3 +521,13 @@ class WorkflowDeadLetterListResponse(
     ] = Field(
         default_factory=list
     )
+
+class WorkflowWorkerControlResponse(
+    BaseModel
+):
+
+    code: int = 0
+
+    message: str = "success"
+
+    data: WorkflowWorkerInfo

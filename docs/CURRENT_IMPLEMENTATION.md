@@ -1666,3 +1666,26 @@ retry_scheduled = 2
 run_dead_lettered = 2
 run_requeued = 1
 ```
+
+## v0.15.0-alpha.9 — Sprint 07D.8 Backpressure, Timeout and Worker Control
+
+Added production queue protection and Worker operations:
+
+- global queue backpressure
+- per-user active-run quota
+- idempotency-before-backpressure
+- per-attempt execution timeout
+- timeout retry and DLQ integration
+- Worker pause / resume / drain
+- persistent rejection and timeout metrics
+- SQLite in-place migration
+
+Acceptance:
+```text
+113/113 tests passed
+queue_full_rejections_delta = 1
+user_quota_rejections_delta = 1
+timeout_failures_delta = 2
+real timed_out_count = 2
+production policy restore passed
+```
