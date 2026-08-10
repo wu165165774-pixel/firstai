@@ -2095,3 +2095,77 @@ git diff --check passed
 ```text
 docs/ROADMAP.md
 ```
+
+## v0.15.0-alpha.18 — Sprint 08A.7 Canonical Entity Foundation
+
+NovelForge 在既有 Novel Project 领域内新增稳定实体身份基础，开始解决长篇生成中的同名、近名和别名串角色问题。
+
+新增数据表：
+
+```text
+novel_entities
+novel_entity_aliases
+```
+
+新增 API：
+
+```text
+POST  /api/v1/novels/{novel_id}/entities
+GET   /api/v1/novels/{novel_id}/entities
+GET   /api/v1/novels/{novel_id}/entities/{entity_id}
+PATCH /api/v1/novels/{novel_id}/entities/{entity_id}
+POST  /api/v1/novels/{novel_id}/entities/resolve
+```
+
+正式语义：
+
+- `(novel_id, entity_id)` 是稳定身份，名字只用于显示和解析。
+- 支持 character、organization、location、item、creature、concept；当前重点为 character。
+- entity update 保留 ID，并使用 `expected_revision` 乐观并发。
+- alias 索引在同一 SQLite 事务中重建。
+- 解析优先级固定为 exact canonical、exact alias、normalized canonical、normalized alias。
+- 规范化使用空白清理、Unicode NFKC 和 casefold。
+- 同一优先级命中多个实体时返回 ambiguous candidates，不默认选择任一实体。
+
+保持不变：
+
+```text
+Story Bible legacy character dictionaries remain compatible
+Planner generate remains candidate-only and persisted=false
+Planner accept remains explicit
+Novel Plan / Story Arc / Chapter Plan schemas and stale semantics remain unchanged
+Memory / FAISS remain retrieval evidence, not Canon authority
+```
+
+自动化验证：
+
+```text
+15/15 Entity Registry focused tests passed
+15/15 Novel Project focused tests passed
+17/17 Novel Planner focused tests passed
+33/33 Planner Agent focused tests passed
+254/254 full regression passed
+Python compileall passed
+Docker Compose config passed
+git diff --check passed
+```
+
+真实 API 与重启验收：
+
+```text
+exact canonical resolution passed
+normalized alias resolution passed
+shared alias returned 2 ambiguous candidates without guessing
+stable entity ID and revision conflict passed
+alias index replacement passed
+Backend restart persistence passed
+existing Novel Plan revision remained 1
+Planner database tables remained absent
+```
+
+详细一致性审计与后续 P0/P1/P2 路线：
+
+```text
+docs/architecture/LONG_FORM_CONSISTENCY.md
+docs/ROADMAP.md
+```

@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.17
+v0.15.0-alpha.18
 ```
 
 已完成的主干能力：
@@ -45,11 +45,12 @@ v0.15.0-alpha.17
 - Novel Project、Story Bible、Novel Plan、Story Arc、Chapter Plan 五层规划领域。
 - Planner 三目标本地 Qwen 结构化候选生成、stale gate、fixed coordinates、Pydantic 强校验。
 - target-aware compact context 和确定性 context budget；真实三阶段 Qwen 验收通过。
+- Canonical Entity Registry、稳定 entity_id、确定性 Alias Resolver 和歧义候选返回。
 
 下一开发项：
 
 ```text
-Sprint 08B.1 - Chapter Plan -> Chapter Workflow Bridge
+Sprint 08A.8 - Story Bible Entity Alignment + Canon Context
 状态：待开发
 ```
 
@@ -58,6 +59,8 @@ Sprint 08B.1 - Chapter Plan -> Chapter Workflow Bridge
 | 阶段 | 目标 | 状态 | 完成定义 |
 | --- | --- | --- | --- |
 | 08A.6 | Planner 候选审核与显式接受 | 已完成 | 生成不落库；接受独立触发；revision、stale、坐标和领域校验全部通过 |
+| 08A.7 | Canonical Entity Foundation | 已完成 | 稳定 entity_id、Entity Registry、确定性 Alias Resolver、歧义不猜测和重启持久化通过 |
+| 08A.8 | Story Bible Entity Alignment + Canon Context | 待开发 | 旧 Bible 兼容绑定实体；Planner/Writer 引用可校验；Canon Context 有优先级和预算 |
 | 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 待开发 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
 | 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 待开发 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
 | 08B.3 | 全小说 Orchestrator | 待开发 | 可按 Arc/Chapter 顺序持续生成，支持暂停、恢复、失败重试和人工门禁 |
@@ -72,6 +75,33 @@ Sprint 08B.1 - Chapter Plan -> Chapter Workflow Bridge
 | 1.0 | 插件化与正式发布 | 待开发 | 插件边界、兼容策略、安装/禁用、升级和完整产品验收完成 |
 
 ## 4. 近期关键路径
+
+### Sprint 08A.7 - 稳定实体身份
+
+```text
+Novel Project
+  -> Entity Registry
+  -> canonical entity_id + aliases
+  -> deterministic resolution
+```
+
+本阶段先解决“这个人物究竟是谁”，不提前实现 Temporal Graph 或自动 Canon 回写。
+
+### Sprint 08A.8 - Canon 上下文
+
+在保持旧 Story Bible 数据兼容的同时，将人物条目与 Registry 对齐，并为 Planner/Writer 建立以下优先级：
+
+```text
+P0 Canon / Hard Constraints
+P1 Current Scene State
+P2 Active Character State
+P3 Current Relationships
+P4 Relevant Temporal Events
+P5 Plot Vector RAG
+P6 External Knowledge RAG
+```
+
+低优先级检索证据不得覆盖高优先级事实。
 
 ### Sprint 08A.6 - 显式接受
 
@@ -98,6 +128,8 @@ Chapter Workflow 请求将显式引用 `chapter_plan_id` 和 revision。系统�
 - fresh Novel Plan、selected Story Arc、selected Chapter Plan。
 - 相邻章节摘要与相关长期记忆。
 - 明确的 POV、目标、scene beats、continuity dependencies 和字数预算。
+
+08B.1 在 08A.8 完成后启动，避免把自由文本人物名称继续带入新的 Writer 桥接层。
 
 ### Sprint 08B.2 - 正文领域
 

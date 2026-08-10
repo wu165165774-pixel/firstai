@@ -5,9 +5,14 @@ from .schemas import (
     ChapterPlanCreate,
     ChapterPlanRevision,
     ChapterPlanUpdate,
+    EntityResolution,
+    EntityResolveRequest,
     NovelPlan,
     NovelPlanRevision,
     NovelPlanUpdate,
+    NovelEntity,
+    NovelEntityCreate,
+    NovelEntityUpdate,
     NovelProject,
     NovelProjectCreate,
     NovelProjectUpdate,
@@ -103,6 +108,64 @@ class NovelProjectService:
             novel_id,
             revision,
         )
+
+    def create_entity(
+        self,
+        novel_id: str,
+        payload: NovelEntityCreate,
+    ) -> NovelEntity:
+        return self.storage.create_entity(
+            novel_id,
+            payload,
+        )
+
+    def list_entities(
+        self,
+        novel_id: str,
+        *,
+        entity_type: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[NovelEntity]:
+        return self.storage.list_entities(
+            novel_id,
+            entity_type=entity_type,
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_entity(
+        self,
+        novel_id: str,
+        entity_id: str,
+    ) -> NovelEntity:
+        return self.storage.get_entity(
+            novel_id,
+            entity_id,
+        )
+
+    def update_entity(
+        self,
+        novel_id: str,
+        entity_id: str,
+        payload: NovelEntityUpdate,
+    ) -> NovelEntity:
+        return self.storage.update_entity(
+            novel_id,
+            entity_id,
+            payload,
+        )
+
+    def resolve_entity(
+        self,
+        novel_id: str,
+        payload: EntityResolveRequest,
+    ) -> EntityResolution:
+        return self.storage.resolve_entity(
+            novel_id,
+            payload,
+        )
+
     def get_novel_plan(
         self,
         novel_id: str,

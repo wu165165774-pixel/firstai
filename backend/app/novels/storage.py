@@ -15,9 +15,14 @@ from .schemas import (
     ChapterPlanCreate,
     ChapterPlanRevision,
     ChapterPlanUpdate,
+    EntityResolution,
+    EntityResolveRequest,
     NovelPlan,
     NovelPlanRevision,
     NovelPlanUpdate,
+    NovelEntity,
+    NovelEntityCreate,
+    NovelEntityUpdate,
     NovelProject,
     NovelProjectCreate,
     NovelProjectUpdate,
@@ -28,6 +33,7 @@ from .schemas import (
     StoryBible,
     StoryBibleRevision,
     StoryBibleUpdate,
+    normalize_entity_name,
 )
 
 
@@ -56,6 +62,16 @@ def _json_load(value: str | None, default: Any) -> Any:
     if not value:
         return default
     return json.loads(value)
+
+
+_ENTITY_ID_PREFIXES = {
+    "character": "char",
+    "organization": "org",
+    "location": "loc",
+    "item": "item",
+    "creature": "creature",
+    "concept": "concept",
+}
 
 
 class NovelProjectStorage:
@@ -165,6 +181,57 @@ class NovelProjectStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_story_bible_revisions_time
                 ON story_bible_revisions(novel_id, revision DESC);
+
+                CREATE TABLE IF NOT EXISTS novel_entities (
+                    novel_id TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    canonical_name TEXT NOT NULL,
+                    canonical_name_normalized TEXT NOT NULL,
+                    aliases_json TEXT NOT NULL DEFAULT '[]',
+                    description TEXT NOT NULL DEFAULT '',
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(novel_id, entity_id),
+                    FOREIGN KEY(novel_id)
+                        REFERENCES novel_projects(novel_id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_novel_entities_type
+                ON novel_entities(
+                    novel_id,
+                    entity_type,
+                    canonical_name_normalized,
+                    entity_id
+                );
+
+                CREATE TABLE IF NOT EXISTS novel_entity_aliases (
+                    novel_id TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    alias TEXT NOT NULL,
+                    normalized_alias TEXT NOT NULL,
+                    alias_kind TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(
+                        novel_id,
+                        entity_id,
+                        normalized_alias
+                    ),
+                    FOREIGN KEY(novel_id, entity_id)
+                        REFERENCES novel_entities(novel_id, entity_id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_entity_alias_resolution
+                ON novel_entity_aliases(
+                    novel_id,
+                    normalized_alias,
+                    alias_kind,
+                    entity_id
+                );
 
                 CREATE TABLE IF NOT EXISTS novel_plans (
                     novel_id TEXT PRIMARY KEY,
@@ -779,6 +846,418 @@ class NovelProjectStorage:
                 f"{novel_id}:story-bible:{revision}"
             )
         return self._revision_from_row(row)
+
+    @staticmethod
+    def _new_entity_id(entity_type: str) -> str:
+        prefix = _ENTITY_ID_PREFIXES[entity_type]
+        return f"{prefix}_{uuid.uuid4().hex}"
+
+    @staticmethod
+    def _entity_aliases(
+        canonical_name: str,
+        aliases: list[str],
+    ) -> list[str]:
+        canonical_normalized = normalize_entity_name(
+            canonical_name
+        )
+        result: list[str] = []
+        seen = {canonical_normalized}
+
+        for alias in aliases:
+            normalized = normalize_entity_name(alias)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(alias)
+
+        return result
+
+    @staticmethod
+    def _replace_entity_aliases(
+        conn: sqlite3.Connection,
+        entity: NovelEntity,
+        now: str,
+    ) -> None:
+        conn.execute(
+            """
+            DELETE FROM novel_entity_aliases
+            WHERE novel_id = ? AND entity_id = ?
+            """,
+            (entity.novel_id, entity.entity_id),
+        )
+
+        indexed_names = [
+            (
+                entity.canonical_name,
+                normalize_entity_name(entity.canonical_name),
+                "canonical",
+            ),
+            *[
+                (
+                    alias,
+                    normalize_entity_name(alias),
+                    "alias",
+                )
+                for alias in entity.aliases
+            ],
+        ]
+
+        conn.executemany(
+            """
+            INSERT INTO novel_entity_aliases (
+                novel_id,
+                entity_id,
+                alias,
+                normalized_alias,
+                alias_kind,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    entity.novel_id,
+                    entity.entity_id,
+                    alias,
+                    normalized,
+                    kind,
+                    now,
+                )
+                for alias, normalized, kind in indexed_names
+            ],
+        )
+
+    def create_entity(
+        self,
+        novel_id: str,
+        payload: NovelEntityCreate,
+    ) -> NovelEntity:
+        entity_id = (
+            payload.entity_id
+            or self._new_entity_id(payload.entity_type)
+        )
+        aliases = self._entity_aliases(
+            payload.canonical_name,
+            payload.aliases,
+        )
+        now = _utc_now()
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            project = conn.execute(
+                "SELECT novel_id FROM novel_projects WHERE novel_id = ?",
+                (novel_id,),
+            ).fetchone()
+            if project is None:
+                raise NovelProjectNotFoundError(novel_id)
+
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO novel_entities (
+                        novel_id,
+                        entity_id,
+                        entity_type,
+                        canonical_name,
+                        canonical_name_normalized,
+                        aliases_json,
+                        description,
+                        revision,
+                        metadata_json,
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                    """,
+                    (
+                        novel_id,
+                        entity_id,
+                        payload.entity_type,
+                        payload.canonical_name,
+                        normalize_entity_name(payload.canonical_name),
+                        _json_dump(aliases),
+                        payload.description,
+                        _json_dump(payload.metadata),
+                        now,
+                        now,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise NovelRevisionConflictError(
+                    "Entity ID conflict: "
+                    f"novel_id={novel_id}, entity_id={entity_id}"
+                ) from exc
+
+            row = conn.execute(
+                """
+                SELECT * FROM novel_entities
+                WHERE novel_id = ? AND entity_id = ?
+                """,
+                (novel_id, entity_id),
+            ).fetchone()
+            entity = self._entity_from_row(row)
+            self._replace_entity_aliases(conn, entity, now)
+            conn.commit()
+
+        return entity
+
+    def list_entities(
+        self,
+        novel_id: str,
+        *,
+        entity_type: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[NovelEntity]:
+        if not self._project_exists(novel_id):
+            raise NovelProjectNotFoundError(novel_id)
+
+        where = ["novel_id = ?"]
+        params: list[Any] = [novel_id]
+        if entity_type is not None:
+            where.append("entity_type = ?")
+            params.append(entity_type)
+
+        params.extend([
+            min(max(int(limit), 1), 500),
+            max(int(offset), 0),
+        ])
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM novel_entities
+                WHERE {' AND '.join(where)}
+                ORDER BY canonical_name_normalized, entity_id
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+
+        return [self._entity_from_row(row) for row in rows]
+
+    def get_entity(
+        self,
+        novel_id: str,
+        entity_id: str,
+    ) -> NovelEntity:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM novel_entities
+                WHERE novel_id = ? AND entity_id = ?
+                """,
+                (novel_id, entity_id),
+            ).fetchone()
+
+        if row is None:
+            if not self._project_exists(novel_id):
+                raise NovelProjectNotFoundError(novel_id)
+            raise NovelProjectNotFoundError(
+                f"{novel_id}:entity:{entity_id}"
+            )
+        return self._entity_from_row(row)
+
+    def update_entity(
+        self,
+        novel_id: str,
+        entity_id: str,
+        payload: NovelEntityUpdate,
+    ) -> NovelEntity:
+        updates = payload.model_dump(exclude_unset=True)
+        expected_revision = updates.pop("expected_revision", None)
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT * FROM novel_entities
+                WHERE novel_id = ? AND entity_id = ?
+                """,
+                (novel_id, entity_id),
+            ).fetchone()
+
+            if row is None:
+                project = conn.execute(
+                    "SELECT novel_id FROM novel_projects WHERE novel_id = ?",
+                    (novel_id,),
+                ).fetchone()
+                if project is None:
+                    raise NovelProjectNotFoundError(novel_id)
+                raise NovelProjectNotFoundError(
+                    f"{novel_id}:entity:{entity_id}"
+                )
+
+            current_revision = int(row["revision"])
+            if (
+                expected_revision is not None
+                and expected_revision != current_revision
+            ):
+                raise NovelRevisionConflictError(
+                    "Entity revision conflict: "
+                    f"expected={expected_revision}, "
+                    f"actual={current_revision}"
+                )
+
+            if not updates:
+                conn.commit()
+                return self._entity_from_row(row)
+
+            canonical_name = updates.get(
+                "canonical_name",
+                row["canonical_name"],
+            )
+            aliases = updates.get(
+                "aliases",
+                _json_load(row["aliases_json"], []),
+            )
+            aliases = self._entity_aliases(
+                canonical_name,
+                aliases,
+            )
+            description = updates.get(
+                "description",
+                row["description"],
+            )
+            metadata = updates.get(
+                "metadata",
+                _json_load(row["metadata_json"], {}),
+            )
+            now = _utc_now()
+
+            conn.execute(
+                """
+                UPDATE novel_entities
+                SET canonical_name = ?,
+                    canonical_name_normalized = ?,
+                    aliases_json = ?,
+                    description = ?,
+                    metadata_json = ?,
+                    revision = revision + 1,
+                    updated_at = ?
+                WHERE novel_id = ? AND entity_id = ?
+                """,
+                (
+                    canonical_name,
+                    normalize_entity_name(canonical_name),
+                    _json_dump(aliases),
+                    description,
+                    _json_dump(metadata),
+                    now,
+                    novel_id,
+                    entity_id,
+                ),
+            )
+            updated_row = conn.execute(
+                """
+                SELECT * FROM novel_entities
+                WHERE novel_id = ? AND entity_id = ?
+                """,
+                (novel_id, entity_id),
+            ).fetchone()
+            entity = self._entity_from_row(updated_row)
+            self._replace_entity_aliases(conn, entity, now)
+            conn.commit()
+
+        return entity
+
+    def resolve_entity(
+        self,
+        novel_id: str,
+        payload: EntityResolveRequest,
+    ) -> EntityResolution:
+        if not self._project_exists(novel_id):
+            raise NovelProjectNotFoundError(novel_id)
+
+        normalized_query = normalize_entity_name(payload.name)
+        params: list[Any] = [
+            novel_id,
+            payload.name,
+            normalized_query,
+        ]
+        type_filter = ""
+        if payload.entity_type is not None:
+            type_filter = " AND e.entity_type = ?"
+            params.append(payload.entity_type)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT e.*, a.alias, a.normalized_alias, a.alias_kind
+                FROM novel_entity_aliases AS a
+                JOIN novel_entities AS e
+                  ON e.novel_id = a.novel_id
+                 AND e.entity_id = a.entity_id
+                WHERE a.novel_id = ?
+                  AND (a.alias = ? OR a.normalized_alias = ?)
+                  {type_filter}
+                ORDER BY e.canonical_name_normalized, e.entity_id
+                """,
+                tuple(params),
+            ).fetchall()
+
+        strategies = (
+            (
+                "exact_canonical",
+                lambda row: (
+                    row["alias_kind"] == "canonical"
+                    and row["alias"] == payload.name
+                ),
+            ),
+            (
+                "exact_alias",
+                lambda row: (
+                    row["alias_kind"] == "alias"
+                    and row["alias"] == payload.name
+                ),
+            ),
+            (
+                "normalized_canonical",
+                lambda row: (
+                    row["alias_kind"] == "canonical"
+                    and row["normalized_alias"] == normalized_query
+                ),
+            ),
+            (
+                "normalized_alias",
+                lambda row: (
+                    row["alias_kind"] == "alias"
+                    and row["normalized_alias"] == normalized_query
+                ),
+            ),
+        )
+
+        for strategy, matches in strategies:
+            candidates: list[NovelEntity] = []
+            seen_ids: set[str] = set()
+
+            for row in rows:
+                if not matches(row) or row["entity_id"] in seen_ids:
+                    continue
+                seen_ids.add(row["entity_id"])
+                candidates.append(self._entity_from_row(row))
+
+            if len(candidates) == 1:
+                return EntityResolution(
+                    query=payload.name,
+                    normalized_query=normalized_query,
+                    status="resolved",
+                    match_strategy=strategy,
+                    entity=candidates[0],
+                )
+
+            if len(candidates) > 1:
+                return EntityResolution(
+                    query=payload.name,
+                    normalized_query=normalized_query,
+                    status="ambiguous",
+                    match_strategy=strategy,
+                    candidates=candidates,
+                )
+
+        return EntityResolution(
+            query=payload.name,
+            normalized_query=normalized_query,
+            status="not_found",
+        )
 
     def get_novel_plan(
         self,
@@ -2550,6 +3029,23 @@ class NovelProjectStorage:
             revision=int(row["revision"]),
             snapshot=snapshot,
             created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _entity_from_row(
+        row: sqlite3.Row,
+    ) -> NovelEntity:
+        return NovelEntity(
+            entity_id=row["entity_id"],
+            novel_id=row["novel_id"],
+            entity_type=row["entity_type"],
+            canonical_name=row["canonical_name"],
+            aliases=_json_load(row["aliases_json"], []),
+            description=row["description"],
+            revision=int(row["revision"]),
+            metadata=_json_load(row["metadata_json"], {}),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )
 
     @staticmethod

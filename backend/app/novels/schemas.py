@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import unicodedata
+
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 
 
 NovelStatus = Literal[
@@ -12,6 +19,61 @@ NovelStatus = Literal[
     "completed",
     "archived",
 ]
+
+EntityType = Literal[
+    "character",
+    "organization",
+    "location",
+    "item",
+    "creature",
+    "concept",
+]
+
+EntityResolutionStatus = Literal[
+    "resolved",
+    "ambiguous",
+    "not_found",
+]
+
+EntityResolutionStrategy = Literal[
+    "exact_canonical",
+    "exact_alias",
+    "normalized_canonical",
+    "normalized_alias",
+]
+
+
+def clean_entity_name(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def normalize_entity_name(value: Any) -> str:
+    cleaned = clean_entity_name(value)
+    return unicodedata.normalize(
+        "NFKC",
+        cleaned,
+    ).casefold()
+
+
+def clean_entity_aliases(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        cleaned = clean_entity_name(value)
+        if not cleaned:
+            raise ValueError("aliases must not contain blank names")
+        if len(cleaned) > 256:
+            raise ValueError("alias must not exceed 256 characters")
+
+        normalized = normalize_entity_name(cleaned)
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        result.append(cleaned)
+
+    return result
 
 
 class NovelProjectCreate(BaseModel):
@@ -89,6 +151,110 @@ class StoryBibleRevision(BaseModel):
     revision: int
     snapshot: StoryBible
     created_at: str
+
+
+class NovelEntityCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
+    entity_type: EntityType = "character"
+    canonical_name: str = Field(min_length=1, max_length=256)
+    aliases: list[str] = Field(default_factory=list, max_length=100)
+    description: str = Field(default="", max_length=8000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("entity_id")
+    @classmethod
+    def clean_entity_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
+
+    @field_validator("canonical_name")
+    @classmethod
+    def clean_canonical_name(cls, value: str) -> str:
+        cleaned = clean_entity_name(value)
+        if not cleaned:
+            raise ValueError("canonical_name must not be blank")
+        return cleaned
+
+    @field_validator("aliases")
+    @classmethod
+    def clean_aliases(cls, values: list[str]) -> list[str]:
+        return clean_entity_aliases(values)
+
+
+class NovelEntityUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int | None = Field(default=None, ge=1)
+    canonical_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+    )
+    aliases: list[str] | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=8000)
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("canonical_name")
+    @classmethod
+    def clean_canonical_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = clean_entity_name(value)
+        if not cleaned:
+            raise ValueError("canonical_name must not be blank")
+        return cleaned
+
+    @field_validator("aliases")
+    @classmethod
+    def clean_aliases(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        return clean_entity_aliases(values)
+
+
+class NovelEntity(BaseModel):
+    entity_id: str
+    novel_id: str
+    entity_type: EntityType
+    canonical_name: str
+    aliases: list[str] = Field(default_factory=list)
+    description: str = ""
+    revision: int
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class EntityResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=256)
+    entity_type: EntityType | None = None
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        cleaned = clean_entity_name(value)
+        if not cleaned:
+            raise ValueError("name must not be blank")
+        return cleaned
+
+
+class EntityResolution(BaseModel):
+    query: str
+    normalized_query: str
+    status: EntityResolutionStatus
+    match_strategy: EntityResolutionStrategy | None = None
+    entity: NovelEntity | None = None
+    candidates: list[NovelEntity] = Field(default_factory=list)
 
 
 class NovelPlanPlotBeat(BaseModel):
@@ -357,6 +523,24 @@ class NovelProjectResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: NovelProject
+
+
+class NovelEntityResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: NovelEntity
+
+
+class NovelEntityListResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: list[NovelEntity] = Field(default_factory=list)
+
+
+class EntityResolutionResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: EntityResolution
 
 
 class NovelProjectListResponse(BaseModel):

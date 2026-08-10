@@ -14,10 +14,17 @@ from app.novels.schemas import (
     ChapterPlanRevisionListResponse,
     ChapterPlanRevisionResponse,
     ChapterPlanUpdate,
+    EntityResolutionResponse,
+    EntityResolveRequest,
+    EntityType,
     NovelPlanResponse,
     NovelPlanRevisionListResponse,
     NovelPlanRevisionResponse,
     NovelPlanUpdate,
+    NovelEntityCreate,
+    NovelEntityListResponse,
+    NovelEntityResponse,
+    NovelEntityUpdate,
     NovelProjectCreate,
     NovelProjectListResponse,
     NovelProjectResponse,
@@ -200,6 +207,107 @@ async def get_story_bible_revision(
     except NovelProjectNotFoundError as exc:
         raise _not_found(exc) from exc
     return StoryBibleRevisionResponse(data=item)
+
+
+@router.post(
+    "/{novel_id}/entities",
+    response_model=NovelEntityResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_novel_entity(
+    novel_id: str,
+    payload: NovelEntityCreate,
+) -> NovelEntityResponse:
+    try:
+        entity = service.create_entity(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return NovelEntityResponse(data=entity)
+
+
+@router.get(
+    "/{novel_id}/entities",
+    response_model=NovelEntityListResponse,
+)
+async def list_novel_entities(
+    novel_id: str,
+    entity_type: EntityType | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> NovelEntityListResponse:
+    try:
+        entities = service.list_entities(
+            novel_id,
+            entity_type=entity_type,
+            limit=limit,
+            offset=offset,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return NovelEntityListResponse(data=entities)
+
+
+@router.post(
+    "/{novel_id}/entities/resolve",
+    response_model=EntityResolutionResponse,
+)
+async def resolve_novel_entity(
+    novel_id: str,
+    payload: EntityResolveRequest,
+) -> EntityResolutionResponse:
+    try:
+        result = service.resolve_entity(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return EntityResolutionResponse(data=result)
+
+
+@router.get(
+    "/{novel_id}/entities/{entity_id}",
+    response_model=NovelEntityResponse,
+)
+async def get_novel_entity(
+    novel_id: str,
+    entity_id: str,
+) -> NovelEntityResponse:
+    try:
+        entity = service.get_entity(
+            novel_id,
+            entity_id,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return NovelEntityResponse(data=entity)
+
+
+@router.patch(
+    "/{novel_id}/entities/{entity_id}",
+    response_model=NovelEntityResponse,
+)
+async def update_novel_entity(
+    novel_id: str,
+    entity_id: str,
+    payload: NovelEntityUpdate,
+) -> NovelEntityResponse:
+    try:
+        entity = service.update_entity(
+            novel_id,
+            entity_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return NovelEntityResponse(data=entity)
 
 @router.get(
     "/{novel_id}/plan",
