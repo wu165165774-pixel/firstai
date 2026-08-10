@@ -1943,3 +1943,88 @@ Chapter revisions = [6, 5, 4, 3, 2, 1]
 Chapter SQLite persistence passed
 Backend restart persistence passed
 ```
+
+## v0.15.0-alpha.16 — Sprint 08A.5 Planner Agent + Local Qwen Structured Planning
+
+NovelForge 在稳定的五层规划领域链之上新增 Planner Agent，并接入本地 `qwen3:8b` 生成结构化规划候选。
+
+新增：
+
+- Planner Agent 与独立 Planner API
+- Novel Plan / Story Arc / Chapter Plan 三类候选
+- `qwen_local` + `qwen3:8b` 默认推理配置
+- Pydantic candidate 最终强校验
+- Story Arc / Chapter Plan fixed coordinate 校验
+- Novel Plan / Story Arc / Chapter Plan stale gates
+- target-aware compact context
+- 3600 字符 deterministic context hard budget
+- compact prompt JSON Schema
+- context / prompt size metadata
+- provider、model、usage、latency、source revision metadata
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/planner/generate
+```
+
+架构边界：
+
+```text
+/planner/generate returns validated candidate only
+persisted = false
+no Planner persistence tables
+accepted candidates persist through existing domain APIs
+```
+
+Chapter target context：
+
+```text
+Project
+Story Bible
+Novel Plan
+single selected Story Arc
+nearby Chapter Plan summaries
+```
+
+不会重复携带完整 Story Arc collection 与 selected Story Arc。
+
+真实 `qwen3:8b` 验收：
+
+```text
+Novel Plan Candidate: PASS
+prompt_tokens = 1711
+planner_context_chars = 2131
+
+Story Arc Candidate: PASS
+prompt_tokens = 1961
+planner_context_chars = 2758
+
+Chapter Plan Candidate: PASS
+prompt_tokens = 2067
+planner_context_chars = 3104
+
+Ollama runtime n_ctx = 4096
+input prompt truncation = false
+```
+
+验收同时证明：
+
+```text
+candidate non-persistence passed
+explicit domain persistence passed
+fixed coordinates passed
+Plan stale gates returned HTTP 409
+selected Arc stale gate returned HTTP 409
+Planner database tables absent
+Backend restart persistence passed
+```
+
+自动化验证：
+
+```text
+22/22 Planner focused tests passed
+228/228 full regression passed
+Docker Compose config passed
+git diff --check passed
+```
