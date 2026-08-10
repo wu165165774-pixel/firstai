@@ -6,13 +6,19 @@ from fastapi import (
     status,
 )
 
-from app.novels.storage import NovelProjectNotFoundError
+from app.novels.storage import (
+    NovelProjectNotFoundError,
+    NovelRevisionConflictError,
+)
 from app.planner.parser import PlannerOutputError
 from app.planner.schemas import (
+    PlannerAcceptRequest,
+    PlannerAcceptResponse,
     PlannerGenerateRequest,
     PlannerGenerateResponse,
 )
 from app.planner.service import (
+    PlannerAcceptanceConflictError,
     PlannerCoordinateError,
     PlannerService,
     PlannerSourceStaleError,
@@ -58,3 +64,34 @@ async def generate_planning_candidate(
         ) from exc
 
     return PlannerGenerateResponse(data=result)
+
+
+@router.post(
+    "/accept",
+    response_model=PlannerAcceptResponse,
+)
+async def accept_planning_candidate(
+    novel_id: str,
+    payload: PlannerAcceptRequest,
+) -> PlannerAcceptResponse:
+    try:
+        result = service.accept(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except (
+        PlannerAcceptanceConflictError,
+        PlannerSourceStaleError,
+        NovelRevisionConflictError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return PlannerAcceptResponse(data=result)

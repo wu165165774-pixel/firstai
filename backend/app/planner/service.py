@@ -7,9 +7,12 @@ from app.agents.manager import AgentManager
 from app.agents.schemas import AgentContext
 from app.novels.schemas import (
     ChapterPlan,
+    ChapterPlanCreate,
     NovelPlan,
+    NovelPlanUpdate,
     NovelProject,
     StoryArc,
+    StoryArcCreate,
     StoryBible,
 )
 from app.novels.service import NovelProjectService
@@ -21,9 +24,12 @@ from .parser import (
 )
 from .schemas import (
     ChapterPlanCandidate,
+    PlannerAcceptRequest,
+    PlannerAcceptResult,
     PlannerGenerateRequest,
     PlannerGenerateResult,
     PlannerSourceRevisions,
+    NovelPlanCandidate,
     StoryArcCandidate,
 )
 
@@ -33,6 +39,10 @@ class PlannerSourceStaleError(RuntimeError):
 
 
 class PlannerCoordinateError(ValueError):
+    pass
+
+
+class PlannerAcceptanceConflictError(RuntimeError):
     pass
 
 
@@ -562,6 +572,82 @@ class PlannerService:
         )
 
     @staticmethod
+    def _assert_acceptance_sources(
+        expected: PlannerSourceRevisions,
+        actual: PlannerSourceRevisions,
+    ) -> None:
+        if expected == actual:
+            return
+
+        mismatches = []
+        for field in (
+            "project_revision",
+            "story_bible_revision",
+            "novel_plan_revision",
+            "story_arc_revision",
+        ):
+            expected_value = getattr(expected, field)
+            actual_value = getattr(actual, field)
+            if expected_value != actual_value:
+                mismatches.append(
+                    f"{field}: expected={expected_value}, "
+                    f"actual={actual_value}"
+                )
+
+        raise PlannerAcceptanceConflictError(
+            "Planner candidate source revisions changed; "
+            + "; ".join(mismatches)
+        )
+
+    def _acceptance_sources(
+        self,
+        novel_id: str,
+        request: PlannerAcceptRequest,
+    ) -> tuple[
+        NovelProject,
+        StoryBible,
+        NovelPlan,
+        StoryArc | None,
+        PlannerSourceRevisions,
+    ]:
+        project = self.novel_service.get_project(novel_id)
+        bible = self.novel_service.get_story_bible(novel_id)
+        plan = self.novel_service.get_novel_plan(novel_id)
+        selected_arc: StoryArc | None = None
+
+        if request.target in {"story_arc", "chapter_plan"}:
+            if plan.is_stale:
+                raise PlannerSourceStaleError(
+                    "Novel Plan is stale; refresh Novel Plan before "
+                    f"accepting {request.target}."
+                )
+
+        if request.target == "chapter_plan":
+            assert request.arc_id is not None
+            selected_arc = self.novel_service.get_story_arc(
+                novel_id,
+                request.arc_id,
+            )
+            if selected_arc.is_stale:
+                raise PlannerSourceStaleError(
+                    "Story Arc is stale; refresh Story Arc before "
+                    "accepting chapter_plan."
+                )
+
+        actual = self._source_revisions(
+            project,
+            bible,
+            plan,
+            selected_arc,
+        )
+        self._assert_acceptance_sources(
+            request.source_revisions,
+            actual,
+        )
+
+        return project, bible, plan, selected_arc, actual
+
+    @staticmethod
     def _fixed_coordinates(
         request: PlannerGenerateRequest,
     ) -> dict[str, Any]:
@@ -741,4 +827,88 @@ class PlannerService:
             latency_ms=result.latency_ms,
             metadata=metadata,
             persisted=False,
+        )
+
+    def accept(
+        self,
+        novel_id: str,
+        request: PlannerAcceptRequest,
+    ) -> PlannerAcceptResult:
+        _, _, plan, _, source_revisions = self._acceptance_sources(
+            novel_id,
+            request,
+        )
+
+        if request.target == "novel_plan":
+            assert isinstance(request.candidate, NovelPlanCandidate)
+            accepted = self.novel_service.update_novel_plan(
+                novel_id,
+                NovelPlanUpdate(
+                    expected_revision=plan.revision,
+                    **request.candidate.model_dump(),
+                ),
+                expected_project_revision=(
+                    source_revisions.project_revision
+                ),
+                expected_story_bible_revision=(
+                    source_revisions.story_bible_revision
+                ),
+            )
+            return PlannerAcceptResult(
+                target=request.target,
+                source_revisions=source_revisions,
+                novel_plan=accepted,
+                persisted=True,
+            )
+
+        if request.target == "story_arc":
+            assert isinstance(request.candidate, StoryArcCandidate)
+            accepted = self.novel_service.create_story_arc(
+                novel_id,
+                StoryArcCreate.model_validate(
+                    request.candidate.model_dump()
+                ),
+                expected_project_revision=(
+                    source_revisions.project_revision
+                ),
+                expected_story_bible_revision=(
+                    source_revisions.story_bible_revision
+                ),
+                expected_novel_plan_revision=(
+                    source_revisions.novel_plan_revision
+                ),
+            )
+            return PlannerAcceptResult(
+                target=request.target,
+                source_revisions=source_revisions,
+                story_arc=accepted,
+                persisted=True,
+            )
+
+        assert request.target == "chapter_plan"
+        assert isinstance(request.candidate, ChapterPlanCandidate)
+        assert source_revisions.story_arc_revision is not None
+        accepted = self.novel_service.create_chapter_plan(
+            novel_id,
+            ChapterPlanCreate.model_validate(
+                request.candidate.model_dump()
+            ),
+            expected_project_revision=(
+                source_revisions.project_revision
+            ),
+            expected_story_bible_revision=(
+                source_revisions.story_bible_revision
+            ),
+            expected_novel_plan_revision=(
+                source_revisions.novel_plan_revision
+            ),
+            expected_story_arc_revision=(
+                source_revisions.story_arc_revision
+            ),
+        )
+        return PlannerAcceptResult(
+            target=request.target,
+            source_revisions=source_revisions,
+            chapter_plan=accepted,
+            persisted=True,
         )

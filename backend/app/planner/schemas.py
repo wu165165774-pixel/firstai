@@ -11,10 +11,13 @@ from pydantic import (
 
 from app.llm.schemas import TokenUsage
 from app.novels.schemas import (
+    ChapterPlan,
     ChapterPlanSceneBeat,
+    NovelPlan,
     NovelPlanCharacterArc,
     NovelPlanPlotBeat,
     NovelPlanVolume,
+    StoryArc,
     StoryArcCharacterProgression,
     StoryArcTurningPoint,
 )
@@ -158,3 +161,109 @@ class PlannerGenerateResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: PlannerGenerateResult
+
+
+class PlannerAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: PlannerTarget
+    candidate: PlannerCandidate
+    source_revisions: PlannerSourceRevisions
+
+    volume_number: int | None = Field(default=None, ge=1, le=10_000)
+    arc_number: int | None = Field(default=None, ge=1, le=100_000)
+    arc_id: str | None = Field(default=None, min_length=1, max_length=128)
+    chapter_number: int | None = Field(default=None, ge=1, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_target_candidate(self) -> "PlannerAcceptRequest":
+        candidate_types = {
+            "novel_plan": NovelPlanCandidate,
+            "story_arc": StoryArcCandidate,
+            "chapter_plan": ChapterPlanCandidate,
+        }
+        expected_type = candidate_types[self.target]
+
+        if not isinstance(self.candidate, expected_type):
+            raise ValueError(
+                f"{self.target} target requires "
+                f"{expected_type.__name__}"
+            )
+
+        if self.target == "story_arc":
+            if self.volume_number is None or self.arc_number is None:
+                raise ValueError(
+                    "story_arc target requires volume_number and arc_number"
+                )
+            assert isinstance(self.candidate, StoryArcCandidate)
+            if (
+                self.candidate.volume_number != self.volume_number
+                or self.candidate.arc_number != self.arc_number
+            ):
+                raise ValueError(
+                    "Story Arc candidate does not match fixed coordinates"
+                )
+
+        if self.target == "chapter_plan":
+            if self.arc_id is None or self.chapter_number is None:
+                raise ValueError(
+                    "chapter_plan target requires arc_id and chapter_number"
+                )
+            assert isinstance(self.candidate, ChapterPlanCandidate)
+            if (
+                self.candidate.arc_id != self.arc_id
+                or self.candidate.chapter_number != self.chapter_number
+            ):
+                raise ValueError(
+                    "Chapter Plan candidate does not match fixed coordinates"
+                )
+            if self.source_revisions.story_arc_revision is None:
+                raise ValueError(
+                    "chapter_plan acceptance requires story_arc_revision"
+                )
+
+        if (
+            self.target != "chapter_plan"
+            and self.source_revisions.story_arc_revision is not None
+        ):
+            raise ValueError(
+                "story_arc_revision is only valid for chapter_plan"
+            )
+
+        return self
+
+
+class PlannerAcceptResult(BaseModel):
+    target: PlannerTarget
+    source_revisions: PlannerSourceRevisions
+    persisted: Literal[True] = True
+
+    novel_plan: NovelPlan | None = None
+    story_arc: StoryArc | None = None
+    chapter_plan: ChapterPlan | None = None
+
+    @model_validator(mode="after")
+    def validate_accepted_entity(self) -> "PlannerAcceptResult":
+        entities = {
+            "novel_plan": self.novel_plan,
+            "story_arc": self.story_arc,
+            "chapter_plan": self.chapter_plan,
+        }
+        present = [
+            target
+            for target, entity in entities.items()
+            if entity is not None
+        ]
+
+        if present != [self.target]:
+            raise ValueError(
+                "accepted entity must match target exactly"
+            )
+
+        return self
+
+
+class PlannerAcceptResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: PlannerAcceptResult

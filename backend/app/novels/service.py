@@ -113,10 +113,15 @@ class NovelProjectService:
         self,
         novel_id: str,
         payload: NovelPlanUpdate,
+        *,
+        expected_project_revision: int | None = None,
+        expected_story_bible_revision: int | None = None,
     ) -> NovelPlan:
         return self.storage.update_novel_plan(
             novel_id,
             payload,
+            expected_project_revision=expected_project_revision,
+            expected_story_bible_revision=expected_story_bible_revision,
         )
 
     def list_novel_plan_revisions(
@@ -144,10 +149,17 @@ class NovelProjectService:
         self,
         novel_id: str,
         payload: StoryArcCreate,
+        *,
+        expected_project_revision: int | None = None,
+        expected_story_bible_revision: int | None = None,
+        expected_novel_plan_revision: int | None = None,
     ) -> StoryArc:
         return self.storage.create_story_arc(
             novel_id,
             payload,
+            expected_project_revision=expected_project_revision,
+            expected_story_bible_revision=expected_story_bible_revision,
+            expected_novel_plan_revision=expected_novel_plan_revision,
         )
 
     def list_story_arcs(
@@ -216,10 +228,19 @@ class NovelProjectService:
         self,
         novel_id: str,
         payload: ChapterPlanCreate,
+        *,
+        expected_project_revision: int | None = None,
+        expected_story_bible_revision: int | None = None,
+        expected_novel_plan_revision: int | None = None,
+        expected_story_arc_revision: int | None = None,
     ) -> ChapterPlan:
         return self.storage.create_chapter_plan(
             novel_id,
             payload,
+            expected_project_revision=expected_project_revision,
+            expected_story_bible_revision=expected_story_bible_revision,
+            expected_novel_plan_revision=expected_novel_plan_revision,
+            expected_story_arc_revision=expected_story_arc_revision,
         )
 
     def list_chapter_plans(

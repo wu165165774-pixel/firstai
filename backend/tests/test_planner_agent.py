@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.agents.planner_agent import PlannerAgent
@@ -17,13 +19,21 @@ from app.novels.schemas import (
     StoryArcCreate,
 )
 from app.novels.service import NovelProjectService
-from app.novels.storage import NovelProjectStorage
+from app.novels.storage import (
+    NovelProjectStorage,
+    NovelRevisionConflictError,
+)
 from app.planner.parser import (
     PlannerOutputError,
     parse_candidate,
 )
-from app.planner.schemas import PlannerGenerateRequest
+from app.planner.schemas import (
+    PlannerAcceptRequest,
+    PlannerGenerateRequest,
+    PlannerSourceRevisions,
+)
 from app.planner.service import (
+    PlannerAcceptanceConflictError,
     PlannerCoordinateError,
     PlannerService,
     PlannerSourceStaleError,
@@ -138,6 +148,59 @@ class PlannerRequestTests(unittest.TestCase):
                 arc_id="arc-1",
             )
 
+    def test_accept_requires_matching_candidate_target(self) -> None:
+        with self.assertRaises(ValidationError):
+            PlannerAcceptRequest(
+                target="story_arc",
+                candidate={
+                    "story_premise": "A candidate plan",
+                },
+                source_revisions={
+                    "project_revision": 1,
+                    "story_bible_revision": 1,
+                    "novel_plan_revision": 1,
+                },
+                volume_number=1,
+                arc_number=1,
+            )
+
+    def test_accept_enforces_fixed_coordinates(self) -> None:
+        with self.assertRaises(ValidationError):
+            PlannerAcceptRequest(
+                target="chapter_plan",
+                candidate={
+                    "arc_id": "arc-1",
+                    "chapter_number": 3,
+                    "title": "Wrong chapter",
+                },
+                source_revisions={
+                    "project_revision": 1,
+                    "story_bible_revision": 1,
+                    "novel_plan_revision": 1,
+                    "story_arc_revision": 1,
+                },
+                arc_id="arc-1",
+                chapter_number=2,
+            )
+
+    def test_chapter_accept_requires_arc_revision(self) -> None:
+        with self.assertRaises(ValidationError):
+            PlannerAcceptRequest(
+                target="chapter_plan",
+                candidate={
+                    "arc_id": "arc-1",
+                    "chapter_number": 2,
+                    "title": "Chapter",
+                },
+                source_revisions={
+                    "project_revision": 1,
+                    "story_bible_revision": 1,
+                    "novel_plan_revision": 1,
+                },
+                arc_id="arc-1",
+                chapter_number=2,
+            )
+
 
 class PlannerAgentIdentityTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -224,6 +287,28 @@ class PlannerServiceTests(unittest.IsolatedAsyncioTestCase):
                 agent_manager=manager,
             ),
             manager,
+        )
+
+    def _source_revisions(
+        self,
+        *,
+        project_revision: int | None = None,
+        novel_plan_revision: int | None = None,
+        story_arc_revision: int | None = None,
+    ) -> PlannerSourceRevisions:
+        return PlannerSourceRevisions(
+            project_revision=(
+                project_revision
+                if project_revision is not None
+                else self.project.revision
+            ),
+            story_bible_revision=1,
+            novel_plan_revision=(
+                novel_plan_revision
+                if novel_plan_revision is not None
+                else self.plan.revision
+            ),
+            story_arc_revision=story_arc_revision,
         )
 
     async def test_generate_novel_plan_candidate(self) -> None:
@@ -366,6 +451,188 @@ class PlannerServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after_plan.revision, before_plan.revision)
         self.assertEqual(len(after_arcs), len(before_arcs))
         self.assertEqual(len(after_chapters), len(before_chapters))
+
+    def test_accept_novel_plan_persists_reviewed_candidate(self) -> None:
+        service, _ = self._service({})
+        result = service.accept(
+            self.novel_id,
+            PlannerAcceptRequest(
+                target="novel_plan",
+                candidate={
+                    "story_premise": "Reviewed premise",
+                    "core_conflict": "Reviewed conflict",
+                    "themes": ["identity"],
+                },
+                source_revisions=self._source_revisions(),
+            ),
+        )
+
+        self.assertTrue(result.persisted)
+        self.assertIsNotNone(result.novel_plan)
+        assert result.novel_plan is not None
+        self.assertEqual(result.novel_plan.revision, 3)
+        self.assertEqual(
+            result.novel_plan.story_premise,
+            "Reviewed premise",
+        )
+        self.assertIsNone(result.story_arc)
+        self.assertIsNone(result.chapter_plan)
+
+    def test_accept_story_arc_persists_with_fixed_coordinates(self) -> None:
+        service, _ = self._service({})
+        result = service.accept(
+            self.novel_id,
+            PlannerAcceptRequest(
+                target="story_arc",
+                candidate={
+                    "volume_number": 1,
+                    "arc_number": 2,
+                    "title": "Reviewed arc",
+                    "objective": "Advance the investigation.",
+                },
+                source_revisions=self._source_revisions(),
+                volume_number=1,
+                arc_number=2,
+            ),
+        )
+
+        self.assertTrue(result.persisted)
+        self.assertIsNotNone(result.story_arc)
+        assert result.story_arc is not None
+        self.assertEqual(result.story_arc.volume_number, 1)
+        self.assertEqual(result.story_arc.arc_number, 2)
+        self.assertEqual(result.story_arc.source_novel_plan_revision, 2)
+
+    def test_accept_chapter_plan_persists_arc_binding(self) -> None:
+        service, _ = self._service({})
+        result = service.accept(
+            self.novel_id,
+            PlannerAcceptRequest(
+                target="chapter_plan",
+                candidate={
+                    "arc_id": self.arc.arc_id,
+                    "chapter_number": 2,
+                    "title": "Reviewed chapter",
+                    "objective": "Escalate the identity conflict.",
+                },
+                source_revisions=self._source_revisions(
+                    story_arc_revision=self.arc.revision,
+                ),
+                arc_id=self.arc.arc_id,
+                chapter_number=2,
+            ),
+        )
+
+        self.assertTrue(result.persisted)
+        self.assertIsNotNone(result.chapter_plan)
+        assert result.chapter_plan is not None
+        self.assertEqual(result.chapter_plan.arc_id, self.arc.arc_id)
+        self.assertEqual(result.chapter_plan.chapter_number, 2)
+        self.assertEqual(result.chapter_plan.volume_number, 1)
+        self.assertEqual(result.chapter_plan.arc_number, 1)
+
+    def test_accept_rejects_changed_source_revisions(self) -> None:
+        request = PlannerAcceptRequest(
+            target="novel_plan",
+            candidate={
+                "story_premise": "Outdated candidate",
+            },
+            source_revisions=self._source_revisions(),
+        )
+        self.novel_service.update_project(
+            self.novel_id,
+            NovelProjectUpdate(
+                expected_revision=1,
+                genre="hard science fiction",
+            ),
+        )
+        service, _ = self._service({})
+
+        with self.assertRaises(PlannerAcceptanceConflictError):
+            service.accept(self.novel_id, request)
+
+        current = self.novel_service.get_novel_plan(self.novel_id)
+        self.assertEqual(current.revision, 2)
+        self.assertNotEqual(
+            current.story_premise,
+            "Outdated candidate",
+        )
+
+    def test_accept_story_arc_rejects_stale_plan(self) -> None:
+        project = self.novel_service.update_project(
+            self.novel_id,
+            NovelProjectUpdate(
+                expected_revision=1,
+                genre="hard science fiction",
+            ),
+        )
+        service, _ = self._service({})
+
+        with self.assertRaises(PlannerSourceStaleError):
+            service.accept(
+                self.novel_id,
+                PlannerAcceptRequest(
+                    target="story_arc",
+                    candidate={
+                        "volume_number": 1,
+                        "arc_number": 2,
+                        "title": "Stale arc",
+                    },
+                    source_revisions=self._source_revisions(
+                        project_revision=project.revision,
+                    ),
+                    volume_number=1,
+                    arc_number=2,
+                ),
+            )
+
+    def test_accept_chapter_rejects_stale_selected_arc(self) -> None:
+        plan = self.novel_service.update_novel_plan(
+            self.novel_id,
+            NovelPlanUpdate(
+                expected_revision=2,
+                central_question="Who owns history?",
+            ),
+        )
+        service, _ = self._service({})
+
+        with self.assertRaises(PlannerSourceStaleError):
+            service.accept(
+                self.novel_id,
+                PlannerAcceptRequest(
+                    target="chapter_plan",
+                    candidate={
+                        "arc_id": self.arc.arc_id,
+                        "chapter_number": 2,
+                        "title": "Stale chapter",
+                    },
+                    source_revisions=self._source_revisions(
+                        novel_plan_revision=plan.revision,
+                        story_arc_revision=self.arc.revision,
+                    ),
+                    arc_id=self.arc.arc_id,
+                    chapter_number=2,
+                ),
+            )
+
+    def test_domain_write_guard_rejects_source_race(self) -> None:
+        before = self.novel_service.list_story_arcs(self.novel_id)
+
+        with self.assertRaises(NovelRevisionConflictError):
+            self.novel_service.create_story_arc(
+                self.novel_id,
+                StoryArcCreate(
+                    volume_number=1,
+                    arc_number=2,
+                    title="Racing candidate",
+                ),
+                expected_project_revision=1,
+                expected_story_bible_revision=1,
+                expected_novel_plan_revision=999,
+            )
+
+        after = self.novel_service.list_story_arcs(self.novel_id)
+        self.assertEqual(len(after), len(before))
 
     async def test_story_arc_generation_rejects_stale_plan(self) -> None:
         self.novel_service.update_project(
@@ -683,6 +950,47 @@ class PlannerServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PlannerSurfaceTests(unittest.TestCase):
+    def test_accept_api_maps_source_conflict_to_409(self) -> None:
+        from app.api.v1 import planner
+
+        class ConflictService:
+            def accept(self, novel_id, payload):
+                raise PlannerAcceptanceConflictError(
+                    "candidate source changed"
+                )
+
+        original_service = planner.service
+        planner.service = ConflictService()
+        try:
+            app = FastAPI()
+            app.include_router(
+                planner.router,
+                prefix="/api/v1",
+            )
+            client = TestClient(app)
+            response = client.post(
+                "/api/v1/novels/novel-1/planner/accept",
+                json={
+                    "target": "novel_plan",
+                    "candidate": {
+                        "story_premise": "Reviewed candidate",
+                    },
+                    "source_revisions": {
+                        "project_revision": 1,
+                        "story_bible_revision": 1,
+                        "novel_plan_revision": 1,
+                    },
+                },
+            )
+        finally:
+            planner.service = original_service
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json()["detail"],
+            "candidate source changed",
+        )
+
     def test_planner_creates_no_database_tables(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = NovelProjectStorage(

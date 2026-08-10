@@ -2028,3 +2028,70 @@ Backend restart persistence passed
 Docker Compose config passed
 git diff --check passed
 ```
+
+## v0.15.0-alpha.17 — Sprint 08A.6 Planner Candidate Review + Explicit Acceptance
+
+Planner candidate-only 架构新增显式审核接受能力。
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/planner/accept
+```
+
+正式边界：
+
+```text
+/planner/generate -> validated candidate, persisted=false
+client review/edit -> explicit user action
+/planner/accept -> existing domain persistence, persisted=true
+```
+
+新增能力：
+
+- Novel Plan / Story Arc / Chapter Plan 三类候选显式接受。
+- target 与 candidate 类型强绑定。
+- Story Arc / Chapter Plan fixed coordinates 二次校验。
+- 接受前重新执行 target-specific stale gate。
+- 接受前比较完整 source revision snapshot。
+- SQLite 写事务内再次核对 expected source revisions，防止检查与落库之间的竞态。
+- 冲突统一返回 HTTP 409，且不产生部分写入。
+- 接受继续复用既有规划领域服务和数据表。
+- `/planner/generate` 行为保持不变，继续绝不自动落库。
+- Planner 数据库表继续不存在。
+
+真实 `qwen3:8b` 三阶段生成与接受：
+
+```text
+Novel Plan: prompt 1351, completion 2207, accept revision 2
+Story Arc: prompt 1568, completion 1688, accept revision 1
+Chapter Plan: prompt 1672, completion 1445, accept revision 1
+persisted on all generation responses = false
+persisted on all acceptance responses = true
+Ollama truncated = 0, 0, 0
+```
+
+冲突与持久化验收：
+
+```text
+old candidate acceptance -> HTTP 409
+persisted revision unchanged after conflict
+planner tables = []
+Backend restart persistence passed
+Chapter Plan Arc binding preserved
+```
+
+自动化验证：
+
+```text
+33/33 Planner focused tests passed
+239/239 full regression passed
+Docker Compose config passed
+git diff --check passed
+```
+
+项目后续主线统一记录于：
+
+```text
+docs/ROADMAP.md
+```

@@ -74,6 +74,26 @@ class NovelProjectStorage:
         )
         self._init_db()
 
+    @staticmethod
+    def _assert_expected_source_revisions(
+        row: sqlite3.Row,
+        expectations: dict[str, int | None],
+        *,
+        entity_name: str,
+    ) -> None:
+        for column, expected in expectations.items():
+            if expected is None:
+                continue
+
+            actual = int(row[column])
+            if expected != actual:
+                source_name = column.removesuffix("_revision")
+                raise NovelRevisionConflictError(
+                    f"{entity_name} source revision conflict: "
+                    f"source={source_name}, expected={expected}, "
+                    f"actual={actual}"
+                )
+
     @contextmanager
     def _connect(self):
         conn = sqlite3.connect(
@@ -792,6 +812,9 @@ class NovelProjectStorage:
         self,
         novel_id: str,
         payload: NovelPlanUpdate,
+        *,
+        expected_project_revision: int | None = None,
+        expected_story_bible_revision: int | None = None,
     ) -> NovelPlan:
         updates = payload.model_dump(
             exclude_unset=True,
@@ -839,6 +862,17 @@ class NovelProjectStorage:
                     f"expected={expected_revision}, "
                     f"actual={current_revision}"
                 )
+
+            self._assert_expected_source_revisions(
+                row,
+                {
+                    "current_project_revision": expected_project_revision,
+                    "current_story_bible_revision": (
+                        expected_story_bible_revision
+                    ),
+                },
+                entity_name="Novel Plan",
+            )
 
             if not updates:
                 conn.commit()
@@ -1004,6 +1038,10 @@ class NovelProjectStorage:
         self,
         novel_id: str,
         payload: StoryArcCreate,
+        *,
+        expected_project_revision: int | None = None,
+        expected_story_bible_revision: int | None = None,
+        expected_novel_plan_revision: int | None = None,
     ) -> StoryArc:
         arc_id = str(uuid.uuid4())
         now = _utc_now()
@@ -1028,6 +1066,16 @@ class NovelProjectStorage:
 
             if source_row is None:
                 raise NovelProjectNotFoundError(novel_id)
+
+            self._assert_expected_source_revisions(
+                source_row,
+                {
+                    "project_revision": expected_project_revision,
+                    "story_bible_revision": expected_story_bible_revision,
+                    "novel_plan_revision": expected_novel_plan_revision,
+                },
+                entity_name="Story Arc",
+            )
 
             try:
                 conn.execute(
@@ -1620,6 +1668,11 @@ class NovelProjectStorage:
         self,
         novel_id: str,
         payload: ChapterPlanCreate,
+        *,
+        expected_project_revision: int | None = None,
+        expected_story_bible_revision: int | None = None,
+        expected_novel_plan_revision: int | None = None,
+        expected_story_arc_revision: int | None = None,
     ) -> ChapterPlan:
         chapter_plan_id = str(uuid.uuid4())
         now = _utc_now()
@@ -1648,6 +1701,17 @@ class NovelProjectStorage:
                 raise NovelProjectNotFoundError(
                     f"{novel_id}:story-arc:{payload.arc_id}"
                 )
+
+            self._assert_expected_source_revisions(
+                source_row,
+                {
+                    "project_revision": expected_project_revision,
+                    "story_bible_revision": expected_story_bible_revision,
+                    "novel_plan_revision": expected_novel_plan_revision,
+                    "story_arc_revision": expected_story_arc_revision,
+                },
+                entity_name="Chapter Plan",
+            )
 
             try:
                 conn.execute(
