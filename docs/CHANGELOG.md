@@ -3,6 +3,21 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.21
+
+- Added stable Manuscript Chapter aggregates and append-only manuscript revisions.
+- Added explicit import of successful quality-gated Workflow Runs as reviewed candidates.
+- Added explicit, optimistic-concurrency Manuscript acceptance with transactional stale-source guards.
+- Added accepted-only prior Manuscript continuity to bounded Chapter Workflow Grounding.
+- Added Manuscript API, persistence, OpenAPI, restart, idempotency, and real `qwen3:8b` acceptance coverage.
+
+## v0.15.0-alpha.20
+
+- Bound every new Chapter Workflow execution to a fresh Chapter Plan revision.
+- Added bounded Project/Bible/Plan/Arc/Chapter grounding for Chapter, Review, and Rewrite.
+- Revalidated bindings during synchronous runs, resume, queue admission, and external Worker execution.
+- Added safe Qwen Review retry behavior for truncated structured output.
+
 ## v0.15.0-alpha.19
 
 - Added explicit legacy Story Bible character alignment to canonical entity IDs.

@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.20
+v0.15.0-alpha.21
 ```
 
 已完成的主干能力：
@@ -52,7 +52,7 @@ v0.15.0-alpha.20
 下一开发项：
 
 ```text
-Sprint 08B.2 - Manuscript / Chapter Draft / Revision Domain
+Sprint 08B.3 - Full Novel Orchestrator
 状态：待开发
 ```
 
@@ -64,7 +64,7 @@ Sprint 08B.2 - Manuscript / Chapter Draft / Revision Domain
 | 08A.7 | Canonical Entity Foundation | 已完成 | 稳定 entity_id、Entity Registry、确定性 Alias Resolver、歧义不猜测和重启持久化通过 |
 | 08A.8 | Story Bible Entity Alignment + Canon Context | 已完成 | 旧 Bible 兼容绑定实体；Planner/Writer 引用可校验；Canon Context 有优先级和预算 |
 | 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 已完成 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
-| 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 待开发 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
+| 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 已完成 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
 | 08B.3 | 全小说 Orchestrator | 待开发 | 可按 Arc/Chapter 顺序持续生成，支持暂停、恢复、失败重试和人工门禁 |
 | 08C.1 | 三层 Memory | 待开发 | Session、Working、Long-term 的职责、生命周期和提升/淘汰规则独立可验收 |
 | 08C.2 | 外部知识库 | 待开发 | 小说内容库与外部知识库物理/逻辑隔离，引用来源可追踪 |
@@ -162,6 +162,16 @@ Chapter Workflow 请求将显式引用 `chapter_plan_id` 和 revision。系统�
 - accepted manuscript revision。
 
 只有 accepted manuscript 才能成为后续章节的权威连续性来源。
+
+当前已完成：
+
+- 每章使用稳定 `manuscript_chapter_id`，正文 revision append-only。
+- 只允许导入 succeeded、completed 且 quality-gated 的持久化 Workflow Run。
+- 导入为 reviewed candidate，不自动接受；重复 Run 导入幂等。
+- 显式接受使用 Manuscript 聚合 revision 乐观并发，并在事务内重验全部规划来源。
+- 只有 accepted revision 进入后续 Chapter Workflow Grounding，未接受候选保持隔离。
+- Grounding metadata 记录 accepted Manuscript ID/revision，并继续遵守 3600 字符预算。
+- 自动化 309 项回归和真实两章 `qwen3:8b` 候选/接受/stale gate 验收通过。
 
 ## 5. Memory 与 RAG 目标架构
 

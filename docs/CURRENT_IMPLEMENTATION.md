@@ -2308,3 +2308,63 @@ sync and async stale gates returned HTTP 409
 Backend/Worker restart persistence passed
 OpenAPI binding requirement persisted
 ```
+
+## v0.15.0-alpha.21 — Sprint 08B.2 Manuscript / Chapter Draft / Revision Domain
+
+NovelForge 新增正式 Manuscript 领域，将 Workflow 正文输出与权威接受稿分离。
+
+新增数据表：
+
+```text
+manuscript_chapters
+manuscript_revisions
+```
+
+新增能力：
+
+- `(novel_id, chapter_number)` 对应稳定 Manuscript Chapter ID。
+- 正文 revision append-only，并保存 content hash、Workflow Run/Version 和规划来源 revision。
+- 只允许导入 succeeded、completed、quality-gated 的持久化 Workflow Run。
+- Workflow draft/rewrite/checkpoint 版本被复制为 immutable Manuscript revisions。
+- 最终 Workflow 正文成为 reviewed candidate，但导入不自动接受。
+- 显式接受使用 Manuscript 聚合 revision 乐观并发。
+- 导入和接受都在事务内重验 Project/Bible/Plan/Arc/Chapter freshness。
+- 同一 Run 重复导入和同一 revision 重复接受均幂等。
+- 后续 Chapter Workflow 只加载最多两个 accepted prior Manuscript revisions。
+- candidate-only 内容不会进入 Agent Grounding，也不会替换既有 accepted revision。
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/manuscript/chapters/import-workflow
+GET  /api/v1/novels/{novel_id}/manuscript/chapters
+GET  /api/v1/novels/{novel_id}/manuscript/chapters/{manuscript_chapter_id}
+GET  /api/v1/novels/{novel_id}/manuscript/chapters/{manuscript_chapter_id}/revisions
+GET  /api/v1/novels/{novel_id}/manuscript/chapters/{manuscript_chapter_id}/revisions/{revision}
+POST /api/v1/novels/{novel_id}/manuscript/chapters/{manuscript_chapter_id}/revisions/{revision}/accept
+```
+
+自动化验证：
+
+```text
+16/16 Manuscript focused tests passed
+14/14 Workflow Grounding focused tests passed
+24/24 Chapter Workflow focused tests passed
+309/309 full regression passed
+Python compileall passed
+Docker Compose config passed
+git diff --check passed
+```
+
+真实 `qwen3:8b` 验收：
+
+```text
+Chapter 1 Workflow succeeded/completed and passed quality gate
+first import created one approved candidate; second import deduplicated
+candidate accepted_revision remained null before explicit accept
+Chapter 2 pre-accept grounding contained no candidate Manuscript IDs
+explicit accept advanced aggregate revision; repeated accept changed=false
+Chapter 2 post-accept grounding contained Chapter 1 Manuscript revision 1
+Story Bible revision 5 -> 6 caused accept to return HTTP 409
+stale rejection left Chapter 2 accepted_revision=null
+```

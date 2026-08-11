@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from app.manuscripts.storage import ManuscriptStorage
 from app.novels.schemas import ChapterPlan
 from app.novels.service import NovelProjectService
 from app.novels.storage import NovelProjectNotFoundError
@@ -41,6 +42,8 @@ class ChapterWorkflowGroundingService:
         "chapter workflow.\n"
         "Follow the selected Chapter Plan coordinates, POV, objective, "
         "scene beats, continuity dependencies, and target word count.\n"
+        "Accepted prior Manuscript revisions are authoritative continuity; "
+        "unaccepted candidates are excluded.\n"
         "Canon remains P0 and overrides conflicts. Memory/RAG is supporting "
         "evidence and must not override this plan or Canon.\n"
     )
@@ -62,6 +65,7 @@ class ChapterWorkflowGroundingService:
         "novel_plan",
         "story_arc",
         "chapter_plan",
+        "accepted_manuscript_continuity",
         "adjacent_chapter_plans",
         "novel_id",
         "chapter_plan_id",
@@ -80,6 +84,10 @@ class ChapterWorkflowGroundingService:
         "scene_beats",
         "continuity_dependencies",
         "target_word_count",
+        "manuscript_chapter_id",
+        "accepted_revision",
+        "content_hash",
+        "content",
         "title",
         "objective",
         "summary",
@@ -106,8 +114,13 @@ class ChapterWorkflowGroundingService:
     def __init__(
         self,
         novel_service: NovelProjectService | None = None,
+        manuscript_storage: ManuscriptStorage | None = None,
     ) -> None:
         self.novel_service = novel_service or NovelProjectService()
+        self.manuscript_storage = (
+            manuscript_storage
+            or ManuscriptStorage(self.novel_service.storage.db_path)
+        )
 
     @staticmethod
     def has_binding(request: ChapterWorkflowRequest) -> bool:
@@ -286,6 +299,20 @@ class ChapterWorkflowGroundingService:
                 )[:8],
                 "target_word_count": chapter.get("target_word_count", 0),
             },
+            "accepted_manuscript_continuity": [
+                {
+                    "manuscript_chapter_id": item.get(
+                        "manuscript_chapter_id"
+                    ),
+                    "chapter_number": item.get("chapter_number"),
+                    "accepted_revision": item.get("accepted_revision"),
+                    "content_hash": item.get("content_hash"),
+                    "content": str(item.get("content", ""))[:420],
+                }
+                for item in context[
+                    "accepted_manuscript_continuity"
+                ][:2]
+            ],
             "adjacent_chapter_plans": context[
                 "adjacent_chapter_plans"
             ][:3],
@@ -351,6 +378,19 @@ class ChapterWorkflowGroundingService:
                     "active_location_ids", []
                 )[:8],
             },
+            "accepted_manuscript_continuity": [
+                {
+                    "manuscript_chapter_id": item.get(
+                        "manuscript_chapter_id"
+                    ),
+                    "chapter_number": item.get("chapter_number"),
+                    "accepted_revision": item.get("accepted_revision"),
+                    "content": str(item.get("content", ""))[:240],
+                }
+                for item in context[
+                    "accepted_manuscript_continuity"
+                ][:2]
+            ],
         }
         encoded = cls._json(
             cls._compact(
@@ -505,6 +545,13 @@ class ChapterWorkflowGroundingService:
             for item in plan.volume_plans
             if item.volume_number == arc.volume_number
         ][:1]
+        accepted_continuity = (
+            self.manuscript_storage.list_accepted_before(
+                request.novel_id,
+                chapter.chapter_number,
+                limit=self.ADJACENT_PREVIOUS_LIMIT,
+            )
+        )
 
         context = {
             "priority": "P0.3_CHAPTER_WORKFLOW_GROUNDING",
@@ -562,6 +609,7 @@ class ChapterWorkflowGroundingService:
             },
             "story_arc": self._dump(arc),
             "chapter_plan": self._dump(chapter),
+            "accepted_manuscript_continuity": accepted_continuity,
             "adjacent_chapter_plans": self._adjacent_chapters(
                 chapters,
                 chapter,
@@ -603,6 +651,15 @@ class ChapterWorkflowGroundingService:
                 item["chapter_plan_id"]
                 for item in context["adjacent_chapter_plans"]
             ],
+            "accepted_manuscript_chapter_ids": [
+                item["manuscript_chapter_id"]
+                for item in accepted_continuity
+            ],
+            "accepted_manuscript_revisions": [
+                item["accepted_revision"]
+                for item in accepted_continuity
+            ],
+            "manuscript_continuity_mode": "accepted_only",
             "memory_query": memory_query,
             "planning_freshness_validated": True,
         }

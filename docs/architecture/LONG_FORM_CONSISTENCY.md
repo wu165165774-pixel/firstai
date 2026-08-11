@@ -13,6 +13,7 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - `Novel Project -> Story Bible -> Novel Plan -> Story Arc -> Chapter Plan` 五层规划领域。
 - Planner 三目标结构化 candidate、stale gate、fixed coordinates、Pydantic 强校验和显式接受。
 - Chapter、Review、Rewrite、Re-review 工作流及队列、恢复、版本和运维能力。
+- 稳定 Manuscript Chapter、不可变正文 revision、显式接受与 accepted-only 后续章节连续性。
 - SQLite Memory、Qwen Embedding、FAISS、关键词/向量混合评分和过滤。
 - Agent 共享上下文与 metadata 扩展点。
 - Story Bible 人物列表，以及规划结构中的 `character_id`、`character_ids`、`pov_character_id` 字段。
@@ -97,6 +98,15 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - 使用 3600 字符确定性预算加载 selected Plan/Arc/Chapter、活跃实体和相邻章节摘要。
 - Chapter、Review、Rewrite 共享权威规划上下文，并确保 Memory/RAG 只作为低优先级检索证据。
 - 同步、resume、异步队列和外部 Worker 均保存绑定并在执行点重新校验 freshness。
+
+### P0.4：Accepted Manuscript Continuity（已完成）
+
+- succeeded、completed 且 quality-gated 的 Workflow Run 可显式导入为 reviewed candidate。
+- Manuscript Chapter 使用稳定 ID，正文 revisions append-only 并保存完整规划来源快照。
+- candidate 导入不会自动接受；接受是带聚合 revision 并发检查的独立事务。
+- 导入与接受都重新验证 Project、Bible、Plan、Arc、Chapter freshness。
+- 后续 Chapter Workflow 只使用 accepted prior revisions，未接受候选不会成为 Canon 或连续性事实。
+- 事实抽取、Memory/Vector/Temporal Graph 回写仍留在后续 Sprint，不由 08B.2 隐式执行。
 
 ## 8. P1 / P2 路线
 
