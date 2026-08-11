@@ -62,10 +62,17 @@ async def chat(
         break
 
     # 根据当前问题检索长期记忆
+    memory_context_args = {
+        "user_id": user_id,
+        "novel_id": novel_id,
+        "query": query,
+    }
+    session_id = metadata.get("session_id")
+    if session_id:
+        memory_context_args["session_id"] = str(session_id)
+
     memory_context = await memory_context_builder.build(
-        user_id=user_id,
-        novel_id=novel_id,
-        query=query,
+        **memory_context_args
     )
 
     if memory_context:

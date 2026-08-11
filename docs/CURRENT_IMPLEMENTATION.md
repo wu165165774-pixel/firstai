@@ -2435,3 +2435,80 @@ Story Bible revision 2 -> 3 made new orchestration creation return HTTP 409
 ```
 
 控制流目前是线性的，SQLite 聚合状态与既有 Queue/DLQ 已足够表达持久恢复、人工门禁和重试，因此本 Sprint 未引入 LangGraph，避免形成第二套执行/checkpoint 权威源。
+
+## v0.15.0-alpha.23 — Sprint 08C.1 Three-tier Memory
+
+NovelForge 将 Memory 内容分类与生命周期正式拆开：
+
+```text
+memory_type = character / world / plot / short_term
+memory_tier = session / working / long_term
+```
+
+新增 `memories` 列：
+
+```text
+memory_tier
+session_id
+expires_at
+revision
+```
+
+新增表：
+
+```text
+memory_lifecycle_events
+```
+
+生命周期规则：
+
+- 旧 rows 自动迁移为 `long_term`，不改变稳定 ID、内容类型或旧 API 默认行为。
+- Session 必须绑定 `session_id`，默认 24 小时 TTL，不写入 FAISS；同内容只在同 session 内去重。
+- Working 为小说级当前创作窗口，默认 30 天 TTL，写入 FAISS。
+- Long-term 为跨会话检索证据，无自动 TTL，写入 FAISS，但不是 Canon。
+- 只允许 `session -> working -> long_term` 相邻提升，保持同一 memory ID。
+- Session 的 frequency 提升要求 `hit_count >= 2`；user-confirmed 提升要求 `importance >= 0.5`。
+- Working -> Long-term 要求权威 basis 与 `importance >= 0.7`；accepted Manuscript / Story Bible basis 必须有 `metadata.source_reference`。
+- promote 使用 `expected_revision`，冲突返回 HTTP 409；创建、强化、提升、淘汰和显式删除写 append-only events。
+- sweep 只淘汰已过期 Session/Working；Long-term 永不被自动 sweep。
+- FAISS consistency 只以 Working/Long-term 为权威集合，Session 误入索引会被 rebuild 清理。
+- Agent tiered Memory block 内按 Session、Working、Long-term 排列，整体仍位于 Canon 与 Chapter Plan Grounding 之后。
+
+扩展/新增 API：
+
+```text
+POST /api/v1/memory
+GET  /api/v1/memory/{user_id}/{novel_id}?memory_tier=&session_id=
+POST /api/v1/memory/{memory_id}/promote
+GET  /api/v1/memory/{memory_id}/lifecycle/events
+POST /api/v1/memory/lifecycle/sweep
+POST /api/v1/memory/sessions/{session_id}/close
+```
+
+同时修复 `MemoryExtractor` 对单个抽取事实重复保存两次的问题。
+
+自动化验证：
+
+```text
+15/15 Memory Lifecycle focused tests passed
+8/8 existing Memory/RAG tests passed
+48/48 Agent/Canon/Workflow Grounding related tests passed
+343/343 full regression passed
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实 HTTP + Qwen Embedding 验收：
+
+```text
+acceptance memory_id = 0783f006-efba-424d-ba14-b245f7827ffb
+Session revision 1 did not appear in /retrieve
+stale expected_revision returned HTTP 409
+Session -> Working kept ID, produced revision 2 and entered /retrieve
+Working -> Long-term kept ID, produced revision 3 and removed TTL
+events = memory_created, memory_promoted, memory_promoted
+expired Session dry-run/execute each selected exactly one ID
+session close evicted only the selected session
+final scope contains no Session and preserves one Long-term row
+```

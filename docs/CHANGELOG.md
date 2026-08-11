@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.23
+
+- Added independent Session, Working, and Long-term lifecycle tiers without changing content-type taxonomy.
+- Added stable memory revisions, append-only lifecycle events, adjacent promotion gates, TTL sweep, and session close.
+- Kept Session memory out of FAISS while indexing Working and Long-term evidence with tier-aware retrieval/context.
+- Migrated legacy memories to Long-term and preserved existing Memory/Agent API contracts.
+- Fixed duplicate `MemoryExtractor` persistence and added real Qwen Embedding lifecycle acceptance coverage.
+
 ## v0.15.0-alpha.22
 
 - Added persisted whole-novel orchestrations with frozen Chapter Plan revision order.

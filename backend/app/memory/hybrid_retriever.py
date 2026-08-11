@@ -4,6 +4,7 @@ import asyncio
 import math
 import os
 import sqlite3
+from datetime import datetime
 
 from dataclasses import dataclass
 
@@ -28,6 +29,10 @@ class HybridMemoryResult:
     novel_id: str
 
     memory_type: str
+
+    memory_tier: str
+
+    session_id: str | None
 
     content: str
 
@@ -210,6 +215,7 @@ class HybridMemoryRetriever:
         memory_ids: list[str],
         user_id: str,
         novel_id: str,
+        memory_tiers: set[str] | None = None,
     ) -> list[sqlite3.Row]:
 
         if not memory_ids:
@@ -220,39 +226,75 @@ class HybridMemoryRetriever:
             for _ in memory_ids
         )
 
-        sql = f"""
-            SELECT
-                id,
-                user_id,
-                novel_id,
-                memory_type,
-                content,
-                importance,
-                hit_count,
-                score,
-                created_at,
-                updated_at,
-                last_accessed_at,
-                metadata
-            FROM memories
-            WHERE user_id = ?
-              AND novel_id = ?
-              AND id IN ({placeholders})
-              AND content IS NOT NULL
-              AND content != ''
-        """
-
-        params = [
-            user_id,
-            novel_id,
-            *memory_ids,
-        ]
-
         with sqlite3.connect(
             self.db_path
         ) as conn:
 
             conn.row_factory = sqlite3.Row
+
+            columns = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(memories)"
+                ).fetchall()
+            }
+
+            tier_select = (
+                "memory_tier"
+                if "memory_tier" in columns
+                else "'long_term' AS memory_tier"
+            )
+            session_select = (
+                "session_id"
+                if "session_id" in columns
+                else "NULL AS session_id"
+            )
+
+            sql = f"""
+                SELECT
+                    id,
+                    user_id,
+                    novel_id,
+                    memory_type,
+                    {tier_select},
+                    {session_select},
+                    content,
+                    importance,
+                    hit_count,
+                    score,
+                    created_at,
+                    updated_at,
+                    last_accessed_at,
+                    metadata
+                FROM memories
+                WHERE user_id = ?
+                  AND novel_id = ?
+                  AND id IN ({placeholders})
+                  AND content IS NOT NULL
+                  AND content != ''
+            """
+
+            params: list[object] = [
+                user_id,
+                novel_id,
+                *memory_ids,
+            ]
+
+            if memory_tiers and "memory_tier" in columns:
+                tier_placeholders = ",".join(
+                    "?" for _ in memory_tiers
+                )
+                sql += (
+                    " AND memory_tier IN "
+                    f"({tier_placeholders})"
+                )
+                params.extend(sorted(memory_tiers))
+
+            if "expires_at" in columns:
+                sql += (
+                    " AND (expires_at IS NULL OR expires_at > ?)"
+                )
+                params.append(datetime.utcnow().isoformat())
 
             rows = conn.execute(
                 sql,
@@ -268,6 +310,7 @@ class HybridMemoryRetriever:
         query: str,
         top_k: int = 5,
         min_similarity: float = 0.25,
+        memory_tiers: set[str] | None = None,
     ) -> list[HybridMemoryResult]:
 
         user_id = str(
@@ -295,6 +338,17 @@ class HybridMemoryRetriever:
 
         if not query or top_k <= 0:
             return []
+
+        normalized_tiers = None
+        if memory_tiers:
+            normalized_tiers = {
+                str(
+                    tier.value
+                    if hasattr(tier, "value")
+                    else tier
+                ).strip()
+                for tier in memory_tiers
+            }
 
         stats = memory_indexer.stats()
 
@@ -352,6 +406,7 @@ class HybridMemoryRetriever:
             memory_ids,
             user_id,
             novel_id,
+            normalized_tiers,
         )
 
         results: list[
@@ -412,6 +467,15 @@ class HybridMemoryRetriever:
                     ),
                     memory_type=str(
                         row["memory_type"]
+                    ),
+                    memory_tier=str(
+                        row["memory_tier"]
+                        or "long_term"
+                    ),
+                    session_id=(
+                        str(row["session_id"])
+                        if row["session_id"] is not None
+                        else None
                     ),
                     content=str(
                         row["content"]

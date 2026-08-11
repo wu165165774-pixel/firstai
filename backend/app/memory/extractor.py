@@ -391,29 +391,6 @@ class MemoryExtractor:
                     f"content={saved.content!r}"
                 )
 
-                # SQLite 保存成功后，同步写入或更新 FAISS。
-                #
-                # FAISS 失败不能影响 SQLite 主存储，
-                # 因此单独捕获异常。索引可以后续通过 rebuild 恢复。
-
-                saved = await memory_manager.add_memory(
-                    memory
-                )
-                
-                saved_memories.append(
-                    saved
-                )
-                
-                logger.info(
-                    "MemoryExtractor saved: "
-                    f"id={saved.id}, "
-                    f"type={saved.memory_type}, "
-                    f"importance={saved.importance}, "
-                    f"content={saved.content!r}"
-                )
-
-
-
             except Exception:
 
                 logger.exception(

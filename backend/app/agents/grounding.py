@@ -17,6 +17,7 @@ class GroundingMemory:
     id: str
     memory_type: str
     content: str
+    memory_tier: str = "long_term"
     similarity: float | None = None
     hybrid_score: float | None = None
 
@@ -111,6 +112,15 @@ class AgentGroundingService:
                 )
             ),
             content=content,
+            memory_tier=(
+                self._normalize_memory_type(
+                    getattr(
+                        memory,
+                        "memory_tier",
+                        "long_term",
+                    )
+                )
+            ),
             similarity=(
                 self._optional_float(
                     getattr(

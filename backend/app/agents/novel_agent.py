@@ -138,18 +138,25 @@ class NovelAgent(BaseAgent):
 
         if context.use_memory:
 
-            memory_context = (
-                await memory_context_builder.build(
-                    user_id=context.user_id,
-                    novel_id=context.novel_id,
-                    query=str(
-                        context.metadata.get(
-                            "memory_query",
-                            context.instruction,
-                        )
-                    ),
-                    top_k=4,
+            memory_context_args = {
+                "user_id": context.user_id,
+                "novel_id": context.novel_id,
+                "query": str(
+                    context.metadata.get(
+                        "memory_query",
+                        context.instruction,
+                    )
+                ),
+                "top_k": 4,
+            }
+            session_id = context.metadata.get("session_id")
+            if session_id:
+                memory_context_args["session_id"] = str(
+                    session_id
                 )
+
+            memory_context = await memory_context_builder.build(
+                **memory_context_args
             )
 
             if memory_context:
@@ -159,7 +166,8 @@ class NovelAgent(BaseAgent):
                         role="system",
                         content=memory_context,
                         metadata={
-                            "source": "long_term_memory"
+                            "source": "long_term_memory",
+                            "memory_mode": "tiered",
                         },
                     )
                 )

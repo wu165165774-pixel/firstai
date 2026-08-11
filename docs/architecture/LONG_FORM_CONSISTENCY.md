@@ -15,6 +15,7 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - Chapter、Review、Rewrite、Re-review 工作流及队列、恢复、版本和运维能力。
 - 稳定 Manuscript Chapter、不可变正文 revision、显式接受与 accepted-only 后续章节连续性。
 - 持久化 Full Novel Orchestrator、逐章队列控制、人工门禁、暂停/恢复和失败重试。
+- 正交的 Session/Working/Long-term Memory 生命周期、提升/淘汰事件与分层检索。
 - SQLite Memory、Qwen Embedding、FAISS、关键词/向量混合评分和过滤。
 - Agent 共享上下文与 metadata 扩展点。
 - Story Bible 人物列表，以及规划结构中的 `character_id`、`character_ids`、`pov_character_id` 字段。
@@ -24,7 +25,7 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 1. `StoryBible.characters` 当前是 `list[dict[str, Any]]`，没有统一的人物 schema、稳定 ID 强制或引用完整性校验。
 2. 规划层虽然已有若干 character ID 字段，但没有权威实体源验证这些 ID 是否真实存在。
 3. 别名没有确定性索引；同名、近名和别名只能由 LLM 自行理解。
-4. 当前 Memory 是内容分类，不是严格的 Session / Working / Long-term 生命周期模型。
+4. 审计时 Memory 只有内容分类，不是严格的 Session / Working / Long-term 生命周期模型；该项已由 08C.1 解决。
 5. Memory 和 FAISS 返回的是上下文证据，当前 Context Builder 尚未建立 Canon 优先级。
 6. 还没有 Temporal Graph，无法区分当前关系与历史关系、当前地点与历史地点。
 7. 还没有 Knowledge Scope，POV Writer 无法可靠隔离世界真相、角色知识与角色信念。
@@ -119,6 +120,17 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - Queue/DLQ 继续作为执行与重试权威来源，Orchestrator 不复制 Worker 调度状态。
 - 当前控制流是确定性的线性状态机，因此未引入 LangGraph 或第二套 checkpoint；未来出现并行分支、人工任务图或补偿事务时再评估。
 
+### P0.6：Three-tier Memory Lifecycle（已完成）
+
+- `memory_type=character/world/plot/short_term` 保持内容分类，新增正交 `memory_tier=session/working/long_term`。
+- 旧 SQLite rows 增量迁移为 Long-term，稳定 ID、既有 API 与 FAISS 数据不丢失。
+- Session 必须绑定 session ID，24 小时 TTL 且不进入 FAISS；session close 可作用域淘汰。
+- Working 使用 30 天 TTL并进入混合检索；Long-term 无自动 TTL，只有显式删除。
+- Session -> Working 与 Working -> Long-term 只能相邻提升，使用 memory revision 乐观并发并保存 append-only lifecycle events。
+- Working -> Long-term 需要权威 promotion basis 和 `importance >= 0.7`；accepted Manuscript / Story Bible 来源还必须携带 `metadata.source_reference`。
+- Agent 上下文按 Session -> Working -> Long-term 排列，但整个 Memory block 仍位于 Canon 与 Chapter Plan Grounding 之后。
+- FAISS consistency rebuild 只覆盖 Working/Long-term，能够清理误入索引的 Session ID。
+
 ## 8. P1 / P2 路线
 
 ### P1：Temporal State
@@ -169,4 +181,4 @@ backend/tests/test_planner_agent.py
 
 ## 10. 已识别技术债
 
-`MemoryExtractor` 当前对同一抽取结果存在重复调用 `memory_manager.add_memory(...)` 的路径，可能造成已有记录 hit count 异常增加。它不属于 P0.1 实体身份切片，本阶段不混入修复；应在 Memory 生命周期改造前以独立回归测试修复。
+08C.1 已修复 `MemoryExtractor` 对同一抽取结果重复调用 `memory_manager.add_memory(...)` 的路径，并以独立回归测试证明每个事实只保存一次。后续技术债集中在 08C.2 外部知识隔离和 08C.3 Graph/Vector 双路融合，不在三层生命周期中提前实现。

@@ -77,8 +77,22 @@ class MemoryIndexConsistencyService:
             self.db_path
         ) as conn:
 
+            columns = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(memories)"
+                ).fetchall()
+            }
+
+            tier_filter = ""
+            if "memory_tier" in columns:
+                tier_filter = (
+                    " AND memory_tier IN "
+                    "('working', 'long_term')"
+                )
+
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     id,
                     content
@@ -87,6 +101,7 @@ class MemoryIndexConsistencyService:
                   AND id != ''
                   AND content IS NOT NULL
                   AND content != ''
+                  {tier_filter}
                 ORDER BY created_at ASC
                 """
             ).fetchall()

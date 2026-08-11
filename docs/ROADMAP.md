@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.22
+v0.15.0-alpha.23
 ```
 
 已完成的主干能力：
@@ -49,11 +49,12 @@ v0.15.0-alpha.22
 - Story Bible 显式实体对齐、规划引用校验和 3600 字符 P0 Canon Context。
 - Chapter Workflow 显式绑定 fresh Chapter Plan，并在同步、恢复和外部 Worker 执行中注入有预算的 P0.3 Grounding。
 - 全小说 Orchestrator 按冻结的 Chapter Plan revision 顺序逐章排队，并以 Manuscript 显式接受作为跨章推进门禁。
+- Session / Working / Long-term Memory 作为独立生命周期层，具备稳定 revision、提升门、TTL 淘汰、事件审计和分层检索。
 
 下一开发项：
 
 ```text
-Sprint 08C.1 - Three-tier Memory
+Sprint 08C.2 - External Knowledge Base
 状态：待开发
 ```
 
@@ -67,7 +68,7 @@ Sprint 08C.1 - Three-tier Memory
 | 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 已完成 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
 | 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 已完成 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
 | 08B.3 | 全小说 Orchestrator | 已完成 | 按冻结 Chapter Plan 顺序逐章驱动 Workflow；暂停、恢复、重试、幂等和 Manuscript 人工门禁可恢复、可审计 |
-| 08C.1 | 三层 Memory | 待开发 | Session、Working、Long-term 的职责、生命周期和提升/淘汰规则独立可验收 |
+| 08C.1 | 三层 Memory | 已完成 | 内容类型与生命周期正交；Session/Working/Long-term 的作用域、TTL、提升门、淘汰、索引和事件可独立验收 |
 | 08C.2 | 外部知识库 | 待开发 | 小说内容库与外部知识库物理/逻辑隔离，引用来源可追踪 |
 | 08C.3 | 双路并行检索 | 待开发 | Temporal/Graph 与 Vector RAG 并行，结果融合、去重、预算和降级可测 |
 | 08D.1 | Temporal Graph 基础 | 待开发 | 角色、地点、事件、关系、时间有效区间与来源 revision 可持久化 |
@@ -215,7 +216,14 @@ Retrieval
           -> fusion / rerank / context budget
 ```
 
-现有 `character/world/plot/short_term` 是内容分类，不等同于上述三层生命周期模型。08C.1 必须显式解决这一差异。
+`character/world/plot/short_term` 继续表示内容分类；独立 `memory_tier=session/working/long_term` 表示生命周期。08C.1 已显式解决这一差异：
+
+- Session：必须绑定 `session_id`，默认 24 小时 TTL，不进入 FAISS，可按 session close。
+- Working：小说作用域，默认 30 天 TTL，进入 FAISS，用于当前卷/弧/章节任务。
+- Long-term：跨会话证据，无自动 TTL，进入 FAISS，但仍低于 Canon 与 Chapter Plan Grounding。
+- 提升只能相邻执行，保持稳定 memory ID，并以 revision 和 append-only lifecycle event 审计。
+- Long-term 不自动淘汰；Working -> Long-term 要求权威 basis、足够 importance，并在来源型提升时保存 `source_reference`。
+- 旧记录自动迁移为 Long-term，不改变现有 `memory_type` 或旧 API 默认行为。
 
 ## 6. 每个 Sprint 的发布门禁
 

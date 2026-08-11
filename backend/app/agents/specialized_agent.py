@@ -385,6 +385,12 @@ class SpecializedAgent(NovelAgent):
                         in memories
                     }
                 ),
+                "memory_tiers": sorted(
+                    {
+                        memory.memory_tier
+                        for memory in memories
+                    }
+                ),
                 "evidence": [
                     {
                         "id": memory.id,
@@ -392,6 +398,9 @@ class SpecializedAgent(NovelAgent):
                             memory.memory_type
                         ),
                         "content": memory.content,
+                        "memory_tier": (
+                            memory.memory_tier
+                        ),
                         "similarity": (
                             memory.similarity
                         ),
