@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.21
+v0.15.0-alpha.22
 ```
 
 已完成的主干能力：
@@ -48,11 +48,12 @@ v0.15.0-alpha.21
 - Canonical Entity Registry、稳定 entity_id、确定性 Alias Resolver 和歧义候选返回。
 - Story Bible 显式实体对齐、规划引用校验和 3600 字符 P0 Canon Context。
 - Chapter Workflow 显式绑定 fresh Chapter Plan，并在同步、恢复和外部 Worker 执行中注入有预算的 P0.3 Grounding。
+- 全小说 Orchestrator 按冻结的 Chapter Plan revision 顺序逐章排队，并以 Manuscript 显式接受作为跨章推进门禁。
 
 下一开发项：
 
 ```text
-Sprint 08B.3 - Full Novel Orchestrator
+Sprint 08C.1 - Three-tier Memory
 状态：待开发
 ```
 
@@ -65,7 +66,7 @@ Sprint 08B.3 - Full Novel Orchestrator
 | 08A.8 | Story Bible Entity Alignment + Canon Context | 已完成 | 旧 Bible 兼容绑定实体；Planner/Writer 引用可校验；Canon Context 有优先级和预算 |
 | 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 已完成 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
 | 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 已完成 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
-| 08B.3 | 全小说 Orchestrator | 待开发 | 可按 Arc/Chapter 顺序持续生成，支持暂停、恢复、失败重试和人工门禁 |
+| 08B.3 | 全小说 Orchestrator | 已完成 | 按冻结 Chapter Plan 顺序逐章驱动 Workflow；暂停、恢复、重试、幂等和 Manuscript 人工门禁可恢复、可审计 |
 | 08C.1 | 三层 Memory | 待开发 | Session、Working、Long-term 的职责、生命周期和提升/淘汰规则独立可验收 |
 | 08C.2 | 外部知识库 | 待开发 | 小说内容库与外部知识库物理/逻辑隔离，引用来源可追踪 |
 | 08C.3 | 双路并行检索 | 待开发 | Temporal/Graph 与 Vector RAG 并行，结果融合、去重、预算和降级可测 |
@@ -172,6 +173,29 @@ Chapter Workflow 请求将显式引用 `chapter_plan_id` 和 revision。系统�
 - 只有 accepted revision 进入后续 Chapter Workflow Grounding，未接受候选保持隔离。
 - Grounding metadata 记录 accepted Manuscript ID/revision，并继续遵守 3600 字符预算。
 - 自动化 309 项回归和真实两章 `qwen3:8b` 候选/接受/stale gate 验收通过。
+
+### Sprint 08B.3 - 全小说 Orchestrator
+
+Orchestrator 负责跨章节控制流，不取代 Workflow 或 Manuscript 领域：
+
+```text
+frozen Chapter Plan revisions
+  -> queue one Chapter Workflow
+  -> explicit advance imports reviewed candidate
+  -> human accepts through Manuscript API
+  -> explicit advance queues the next chapter
+```
+
+当前已完成：
+
+- 创建时冻结 Arc/Chapter 选择、章节顺序、Chapter Plan ID/revision 和运行策略。
+- 同一时间只排入一个章节；只有精确候选 revision 被显式接受后才推进下一章。
+- `advance` 只协调既有 Workflow 与 Manuscript API 边界，不自动接受正文。
+- 聚合 revision 乐观并发、append-only 事件、创建幂等、暂停、恢复和失败重试完整持久化。
+- 暂停不取消正在运行的昂贵推理，但阻止候选导入和跨章节推进。
+- stale Plan 在创建时返回 HTTP 409；入队后的规划 freshness 继续由既有 Workflow Grounding 重验。
+- 未引入 LangGraph：当前线性状态机由 SQLite 事务和既有 Queue/DLQ 完整表达，避免增加双重持久化源。
+- 自动化 328 项回归和真实外部 Worker 两章 `qwen3:8b` 顺序编排验收通过。
 
 ## 5. Memory 与 RAG 目标架构
 

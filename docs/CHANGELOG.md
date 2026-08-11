@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.22
+
+- Added persisted whole-novel orchestrations with frozen Chapter Plan revision order.
+- Added one-chapter-at-a-time Workflow queueing, explicit reconciliation, and accepted-only continuity handoff.
+- Preserved the Manuscript human gate: successful Workflow output is imported as a candidate but never auto-accepted.
+- Added optimistic orchestration revisions, append-only events, pause/resume, retry, idempotent creation, and restart recovery.
+- Added Orchestrator API/OpenAPI coverage plus real two-chapter external-worker `qwen3:8b` acceptance.
+
 ## v0.15.0-alpha.21
 
 - Added stable Manuscript Chapter aggregates and append-only manuscript revisions.

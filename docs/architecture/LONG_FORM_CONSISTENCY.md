@@ -14,6 +14,7 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - Planner 三目标结构化 candidate、stale gate、fixed coordinates、Pydantic 强校验和显式接受。
 - Chapter、Review、Rewrite、Re-review 工作流及队列、恢复、版本和运维能力。
 - 稳定 Manuscript Chapter、不可变正文 revision、显式接受与 accepted-only 后续章节连续性。
+- 持久化 Full Novel Orchestrator、逐章队列控制、人工门禁、暂停/恢复和失败重试。
 - SQLite Memory、Qwen Embedding、FAISS、关键词/向量混合评分和过滤。
 - Agent 共享上下文与 metadata 扩展点。
 - Story Bible 人物列表，以及规划结构中的 `character_id`、`character_ids`、`pov_character_id` 字段。
@@ -107,6 +108,16 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - 导入与接受都重新验证 Project、Bible、Plan、Arc、Chapter freshness。
 - 后续 Chapter Workflow 只使用 accepted prior revisions，未接受候选不会成为 Canon 或连续性事实。
 - 事实抽取、Memory/Vector/Temporal Graph 回写仍留在后续 Sprint，不由 08B.2 隐式执行。
+
+### P0.5：Full Novel Orchestration（已完成）
+
+- 创建时冻结 Chapter Plan ID/revision 顺序，避免运行中选择集合漂移。
+- 一次只允许一个章节进入 Workflow Queue；下一章只在上一章精确候选 revision 被显式接受后排队。
+- Orchestrator 只显式导入质量门通过的 Workflow candidate，不拥有 Manuscript 接受权限。
+- 聚合 revision、append-only events 和 SQLite 状态支持幂等控制、暂停、恢复、重试与重启恢复。
+- 暂停保留在途 Workflow，避免浪费本地模型推理；恢复后显式 reconcile 终态。
+- Queue/DLQ 继续作为执行与重试权威来源，Orchestrator 不复制 Worker 调度状态。
+- 当前控制流是确定性的线性状态机，因此未引入 LangGraph 或第二套 checkpoint；未来出现并行分支、人工任务图或补偿事务时再评估。
 
 ## 8. P1 / P2 路线
 

@@ -2368,3 +2368,70 @@ Chapter 2 post-accept grounding contained Chapter 1 Manuscript revision 1
 Story Bible revision 5 -> 6 caused accept to return HTTP 409
 stale rejection left Chapter 2 accepted_revision=null
 ```
+
+## v0.15.0-alpha.22 — Sprint 08B.3 Full Novel Orchestrator
+
+NovelForge 新增持久化全小说 Orchestrator，在既有 Workflow Queue 与 Manuscript 领域之间提供可恢复的跨章节控制流。
+
+新增数据表：
+
+```text
+novel_orchestrations
+novel_orchestration_steps
+novel_orchestration_events
+```
+
+核心边界：
+
+- 创建时冻结选择范围、Chapter Plan ID/revision、章节顺序、Workflow 和 Queue 策略。
+- 每次只排入当前章节的一个 Workflow Run，不并发生成后续章节。
+- `advance` 显式协调 succeeded/completed/quality-gated Run，并复用 Manuscript 导入服务形成 candidate。
+- candidate 的 `accepted_revision` 保持 `null`；接受仍只能调用既有 Manuscript API。
+- 只有当前 step 对应的精确 candidate revision 被接受后，Orchestrator 才排入下一章。
+- 后续章节继续由既有 Grounding 读取 accepted-only prior Manuscript revisions。
+- Orchestrator 聚合使用 revision 乐观并发；每个状态变化写入 append-only event。
+- pause 不取消在途 Workflow，而是阻断候选导入和跨章推进；resume 会恢复原状态并 reconcile。
+- Queue/DLQ failure 可重试同一 Run；质量门失败或人工拒绝候选可创建新的 Workflow attempt。
+- 创建支持 `Idempotency-Key`，进程重启后聚合、steps、events 和关联 Run 仍可恢复。
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/orchestrations
+GET  /api/v1/novels/{novel_id}/orchestrations
+GET  /api/v1/novels/{novel_id}/orchestrations/{orchestration_id}
+POST /api/v1/novels/{novel_id}/orchestrations/{orchestration_id}/advance
+POST /api/v1/novels/{novel_id}/orchestrations/{orchestration_id}/pause
+POST /api/v1/novels/{novel_id}/orchestrations/{orchestration_id}/resume
+POST /api/v1/novels/{novel_id}/orchestrations/{orchestration_id}/retry
+```
+
+自动化验证：
+
+```text
+19/19 Orchestrator focused tests passed
+16/16 Manuscript focused tests passed
+14/14 Workflow Grounding focused tests passed
+8/8 Workflow Async focused tests passed
+328/328 full regression passed
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实外部 Worker `qwen3:8b` 验收：
+
+```text
+orchestration_id = 8eb289fe-1aaa-4a95-8f2a-24ef107f234f
+Chapter 1 Run succeeded/completed and passed quality gate
+pause blocked candidate import and Chapter 2 queueing after Run completion
+resume imported Chapter 1 candidate without accepting it
+explicit Manuscript accept then queued exactly one Chapter 2 Run
+Chapter 2 Grounding contained Chapter 1 accepted Manuscript revision 1
+Chapter 2 candidate remained gated until explicit Manuscript accept
+final orchestration revision = 9, status = completed, accepted = 2/2
+same Idempotency-Key returned deduplicated=true
+Story Bible revision 2 -> 3 made new orchestration creation return HTTP 409
+```
+
+控制流目前是线性的，SQLite 聚合状态与既有 Queue/DLQ 已足够表达持久恢复、人工门禁和重试，因此本 Sprint 未引入 LangGraph，避免形成第二套执行/checkpoint 权威源。

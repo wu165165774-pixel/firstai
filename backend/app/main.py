@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.21",
+    version="0.15.0-alpha.22",
     lifespan=lifespan,
 )
 
@@ -120,4 +120,12 @@ app.include_router(
     manuscript_router,
     prefix="/api/v1",
     tags=["Manuscript"],
+)
+
+from app.api.v1.orchestrations import router as orchestration_router
+
+app.include_router(
+    orchestration_router,
+    prefix="/api/v1",
+    tags=["Orchestrator"],
 )
