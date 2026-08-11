@@ -16,6 +16,7 @@ from app.novels.schemas import (
     StoryBible,
 )
 from app.novels.service import NovelProjectService
+from app.novels.storage import NovelEntityReferenceError
 
 from .parser import (
     PlannerOutputError,
@@ -65,6 +66,10 @@ class PlannerService:
         "beat_id",
         "turning_point_id",
         "character_id",
+        "entity_id",
+        "canonical_name",
+        "aliases",
+        "canonical_entities",
         "volume_number",
         "arc_number",
         "chapter_number",
@@ -462,6 +467,29 @@ class PlannerService:
             for item in nearest
         ]
 
+    def _story_bible_context(
+        self,
+        novel_id: str,
+        bible: StoryBible,
+    ) -> dict[str, Any]:
+        context = self._dump_model(bible)
+        entities = self.novel_service.list_entities(
+            novel_id,
+            limit=64,
+        )
+        if entities:
+            context["canonical_entities"] = [
+                {
+                    "entity_id": entity.entity_id,
+                    "entity_type": entity.entity_type,
+                    "canonical_name": entity.canonical_name,
+                    "aliases": entity.aliases,
+                    "description": entity.description,
+                }
+                for entity in entities
+            ]
+        return context
+
     def _build_context(
         self,
         novel_id: str,
@@ -476,6 +504,10 @@ class PlannerService:
         project = self.novel_service.get_project(novel_id)
         bible = self.novel_service.get_story_bible(novel_id)
         plan = self.novel_service.get_novel_plan(novel_id)
+        bible_context = self._story_bible_context(
+            novel_id,
+            bible,
+        )
 
         selected_arc: StoryArc | None = None
 
@@ -489,7 +521,7 @@ class PlannerService:
         if request.target == "novel_plan":
             context = {
                 "project": self._dump_model(project),
-                "story_bible": self._dump_model(bible),
+                "story_bible": bible_context,
                 "current_novel_plan": self._dump_model(plan),
             }
 
@@ -501,7 +533,7 @@ class PlannerService:
 
             context = {
                 "project": self._dump_model(project),
-                "story_bible": self._dump_model(bible),
+                "story_bible": bible_context,
                 "novel_plan": self._dump_model(plan),
                 "existing_story_arcs": [
                     self._story_arc_index_item(item)
@@ -532,7 +564,7 @@ class PlannerService:
 
             context = {
                 "project": self._dump_model(project),
-                "story_bible": self._dump_model(bible),
+                "story_bible": bible_context,
                 "novel_plan": self._dump_model(plan),
                 "selected_story_arc": self._dump_model(
                     selected_arc
@@ -761,6 +793,7 @@ class PlannerService:
             provider=request.provider,
             model=request.model,
             use_memory=request.use_memory,
+            use_canon=False,
             task_mode="creative",
             reasoning_effort=request.reasoning_effort,
             temperature=request.temperature,
@@ -798,11 +831,24 @@ class PlannerService:
             candidate,
         )
 
+        try:
+            self.novel_service.validate_planning_entity_references(
+                novel_id,
+                request.target,
+                candidate,
+            )
+        except NovelEntityReferenceError as exc:
+            raise PlannerOutputError(
+                "Planner candidate contains an invalid canonical "
+                f"entity reference: {exc}"
+            ) from exc
+
         metadata = dict(result.metadata or {})
         metadata.update(
             {
                 "planner_target": request.target,
                 "candidate_validated": True,
+                "canonical_references_validated": True,
                 "persisted": False,
                 "planner_context_mode": "target_aware_compact",
                 "planner_context_chars": len(

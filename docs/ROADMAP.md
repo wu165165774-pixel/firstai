@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.18
+v0.15.0-alpha.19
 ```
 
 已完成的主干能力：
@@ -46,11 +46,12 @@ v0.15.0-alpha.18
 - Planner 三目标本地 Qwen 结构化候选生成、stale gate、fixed coordinates、Pydantic 强校验。
 - target-aware compact context 和确定性 context budget；真实三阶段 Qwen 验收通过。
 - Canonical Entity Registry、稳定 entity_id、确定性 Alias Resolver 和歧义候选返回。
+- Story Bible 显式实体对齐、规划引用校验和 3600 字符 P0 Canon Context。
 
 下一开发项：
 
 ```text
-Sprint 08A.8 - Story Bible Entity Alignment + Canon Context
+Sprint 08B.1 - Chapter Plan -> Chapter Workflow Bridge
 状态：待开发
 ```
 
@@ -60,7 +61,7 @@ Sprint 08A.8 - Story Bible Entity Alignment + Canon Context
 | --- | --- | --- | --- |
 | 08A.6 | Planner 候选审核与显式接受 | 已完成 | 生成不落库；接受独立触发；revision、stale、坐标和领域校验全部通过 |
 | 08A.7 | Canonical Entity Foundation | 已完成 | 稳定 entity_id、Entity Registry、确定性 Alias Resolver、歧义不猜测和重启持久化通过 |
-| 08A.8 | Story Bible Entity Alignment + Canon Context | 待开发 | 旧 Bible 兼容绑定实体；Planner/Writer 引用可校验；Canon Context 有优先级和预算 |
+| 08A.8 | Story Bible Entity Alignment + Canon Context | 已完成 | 旧 Bible 兼容绑定实体；Planner/Writer 引用可校验；Canon Context 有优先级和预算 |
 | 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 待开发 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
 | 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 待开发 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
 | 08B.3 | 全小说 Orchestrator | 待开发 | 可按 Arc/Chapter 顺序持续生成，支持暂停、恢复、失败重试和人工门禁 |
@@ -102,6 +103,15 @@ P6 External Knowledge RAG
 ```
 
 低优先级检索证据不得覆盖高优先级事实。
+
+当前已完成：
+
+- legacy `id` / `character_id` / `entity_id` 显式对齐。
+- 歧义、重复绑定与 ID/名称冲突事务回滚。
+- Entity 变更推进 Canon revision，并触发规划 stale。
+- Planner 三目标 Canon 引用校验。
+- Agent P0 Canon Context 在 Memory/RAG 之前注入。
+- 3600 字符确定性预算和 active entity filter。
 
 ### Sprint 08A.6 - 显式接受
 

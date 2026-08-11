@@ -36,6 +36,8 @@ from app.novels.schemas import (
     StoryArcRevisionResponse,
     StoryArcUpdate,
     StoryBibleResponse,
+    StoryBibleEntityAlignRequest,
+    StoryBibleEntityAlignmentResponse,
     StoryBibleRevisionListResponse,
     StoryBibleRevisionResponse,
     StoryBibleUpdate,
@@ -171,6 +173,26 @@ async def update_story_bible(
     except NovelRevisionConflictError as exc:
         raise _conflict(exc) from exc
     return StoryBibleResponse(data=bible)
+
+
+@router.post(
+    "/{novel_id}/story-bible/entities/align",
+    response_model=StoryBibleEntityAlignmentResponse,
+)
+async def align_story_bible_entities(
+    novel_id: str,
+    payload: StoryBibleEntityAlignRequest,
+) -> StoryBibleEntityAlignmentResponse:
+    try:
+        alignment = service.align_story_bible_entities(
+            novel_id,
+            payload,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except NovelRevisionConflictError as exc:
+        raise _conflict(exc) from exc
+    return StoryBibleEntityAlignmentResponse(data=alignment)
 
 
 @router.get(

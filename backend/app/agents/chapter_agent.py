@@ -52,8 +52,8 @@ class ChapterAgent(LLMSpecializedAgent):
 
             Rules:
 
-            1. Confirmed character, world, and plot memories
-               have higher priority than creative assumptions.
+            1. Canon Facts are P0 hard constraints and cannot
+               be overridden by Memory, RAG, or assumptions.
             2. Preserve character identity, motivation, voice,
                relationships, abilities, and current state.
             3. Preserve established world rules, geography,
@@ -73,5 +73,7 @@ class ChapterAgent(LLMSpecializedAgent):
             10. Do not output planning notes or analysis unless
                 the user explicitly asks for them.
             11. Respond in the language used by the user.
+            12. Never treat world truth as knowledge held by the
+                POV character unless that knowledge is supplied.
             """
         ).strip()

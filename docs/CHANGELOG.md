@@ -3,6 +3,15 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.19
+
+- Added explicit legacy Story Bible character alignment to canonical entity IDs.
+- Added transaction-safe ambiguity, duplicate binding, ID/name, and revision conflicts.
+- Added canonical planning reference validation for Novel Plan, Story Arc, and Chapter Plan.
+- Added bounded P0 Canon Context injection ahead of Memory/RAG evidence.
+- Added Canon revision invalidation when canonical entities change.
+- Revalidated all three Planner targets with real `qwen3:8b` and canonical IDs.
+
 ## v0.15.0-alpha.18
 
 - Added the Sprint 08A.7 canonical Entity Registry with stable novel-scoped IDs.

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from .schemas import (
     ChapterPlan,
     ChapterPlanCreate,
@@ -31,8 +33,12 @@ from .schemas import (
     StoryArcRevision,
     StoryArcUpdate,
     StoryBible,
+    StoryBibleEntityAlignRequest,
+    StoryBibleEntityAlignment,
+    StoryBibleEntityBinding,
     StoryBibleRevision,
     StoryBibleUpdate,
+    clean_entity_name,
     normalize_entity_name,
 )
 
@@ -42,6 +48,10 @@ class NovelProjectNotFoundError(KeyError):
 
 
 class NovelRevisionConflictError(RuntimeError):
+    pass
+
+
+class NovelEntityReferenceError(NovelRevisionConflictError):
     pass
 
 
@@ -688,6 +698,57 @@ class NovelProjectStorage:
             )
         return self._story_bible_from_row(row)
 
+    def _advance_canon_revision(
+        self,
+        conn: sqlite3.Connection,
+        novel_id: str,
+        now: str,
+        *,
+        characters: list[dict[str, Any]] | None = None,
+    ) -> StoryBible:
+        if characters is None:
+            conn.execute(
+                """
+                UPDATE story_bibles
+                SET revision = revision + 1,
+                    updated_at = ?
+                WHERE novel_id = ?
+                """,
+                (now, novel_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE story_bibles
+                SET characters_json = ?,
+                    revision = revision + 1,
+                    updated_at = ?
+                WHERE novel_id = ?
+                """,
+                (_json_dump(characters), now, novel_id),
+            )
+
+        row = conn.execute(
+            "SELECT * FROM story_bibles WHERE novel_id = ?",
+            (novel_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(
+                f"Story Bible is missing for novel {novel_id}"
+            )
+
+        bible = self._story_bible_from_row(row)
+        self._insert_story_bible_revision(conn, bible, now)
+        conn.execute(
+            """
+            UPDATE novel_projects
+            SET updated_at = ?
+            WHERE novel_id = ?
+            """,
+            (now, novel_id),
+        )
+        return bible
+
     def update_story_bible(
         self,
         novel_id: str,
@@ -848,6 +909,294 @@ class NovelProjectStorage:
         return self._revision_from_row(row)
 
     @staticmethod
+    def _story_bible_character_value(
+        character: dict[str, Any],
+        *keys: str,
+    ) -> str:
+        for key in keys:
+            value = clean_entity_name(character.get(key))
+            if value:
+                return value
+        return ""
+
+    def align_story_bible_entities(
+        self,
+        novel_id: str,
+        payload: StoryBibleEntityAlignRequest,
+    ) -> StoryBibleEntityAlignment:
+        now = _utc_now()
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            bible_row = conn.execute(
+                "SELECT * FROM story_bibles WHERE novel_id = ?",
+                (novel_id,),
+            ).fetchone()
+            if bible_row is None:
+                if not self._project_exists(novel_id):
+                    raise NovelProjectNotFoundError(novel_id)
+                raise RuntimeError(
+                    f"Story Bible is missing for novel {novel_id}"
+                )
+
+            current_revision = int(bible_row["revision"])
+            if payload.expected_revision != current_revision:
+                raise NovelRevisionConflictError(
+                    "Story Bible revision conflict: "
+                    f"expected={payload.expected_revision}, "
+                    f"actual={current_revision}"
+                )
+
+            characters = _json_load(
+                bible_row["characters_json"],
+                [],
+            )
+            aligned_characters: list[dict[str, Any]] = []
+            bindings: list[StoryBibleEntityBinding] = []
+            created_entities: list[NovelEntity] = []
+            bound_ids: set[str] = set()
+
+            for index, raw_character in enumerate(characters):
+                if not isinstance(raw_character, dict):
+                    raise NovelEntityReferenceError(
+                        "Story Bible character must be an object: "
+                        f"index={index}"
+                    )
+
+                character = dict(raw_character)
+                explicit_id = self._story_bible_character_value(
+                    character,
+                    "entity_id",
+                    "character_id",
+                    "id",
+                )
+                name = self._story_bible_character_value(
+                    character,
+                    "canonical_name",
+                    "name",
+                )
+
+                entity: NovelEntity | None = None
+                action = "existing_id"
+
+                if explicit_id:
+                    entity_row = conn.execute(
+                        """
+                        SELECT * FROM novel_entities
+                        WHERE novel_id = ? AND entity_id = ?
+                        """,
+                        (novel_id, explicit_id),
+                    ).fetchone()
+
+                    if entity_row is not None:
+                        entity = self._entity_from_row(entity_row)
+                        if entity.entity_type != "character":
+                            raise NovelEntityReferenceError(
+                                "Story Bible character references a "
+                                "non-character entity: "
+                                f"index={index}, entity_id={explicit_id}, "
+                                f"entity_type={entity.entity_type}"
+                            )
+
+                        if name:
+                            _, name_rows = self._resolve_entity_rows(
+                                conn,
+                                novel_id,
+                                name,
+                                entity_type="character",
+                            )
+                            matched_ids = {
+                                row["entity_id"]
+                                for row in name_rows
+                            }
+                            if explicit_id not in matched_ids:
+                                raise NovelEntityReferenceError(
+                                    "Story Bible character ID/name conflict: "
+                                    f"index={index}, entity_id={explicit_id}, "
+                                    f"name={name}"
+                                )
+                    else:
+                        if not name:
+                            raise NovelEntityReferenceError(
+                                "Cannot create a missing Story Bible "
+                                "character entity without a name: "
+                                f"index={index}, entity_id={explicit_id}"
+                            )
+
+                        _, name_rows = self._resolve_entity_rows(
+                            conn,
+                            novel_id,
+                            name,
+                            entity_type="character",
+                        )
+                        if name_rows:
+                            matched_ids = {
+                                row["entity_id"]
+                                for row in name_rows
+                            }
+                            raise NovelEntityReferenceError(
+                                "Story Bible character ID conflicts with "
+                                "an existing name binding: "
+                                f"index={index}, entity_id={explicit_id}, "
+                                f"name={name}, matches={sorted(matched_ids)}"
+                            )
+
+                        if not payload.create_missing:
+                            raise NovelEntityReferenceError(
+                                "Story Bible character entity is missing: "
+                                f"index={index}, entity_id={explicit_id}"
+                            )
+
+                        entity = self._create_story_bible_entity(
+                            conn,
+                            novel_id,
+                            character,
+                            index=index,
+                            entity_id=explicit_id,
+                            canonical_name=name,
+                            now=now,
+                        )
+                        created_entities.append(entity)
+                        action = "created"
+                else:
+                    if not name:
+                        raise NovelEntityReferenceError(
+                            "Story Bible character requires a name: "
+                            f"index={index}"
+                        )
+
+                    _, name_rows = self._resolve_entity_rows(
+                        conn,
+                        novel_id,
+                        name,
+                        entity_type="character",
+                    )
+                    if len(name_rows) > 1:
+                        candidate_ids = sorted(
+                            row["entity_id"]
+                            for row in name_rows
+                        )
+                        raise NovelEntityReferenceError(
+                            "Story Bible character name is ambiguous: "
+                            f"index={index}, name={name}, "
+                            f"candidates={candidate_ids}"
+                        )
+                    if len(name_rows) == 1:
+                        entity = self._entity_from_row(name_rows[0])
+                        action = "resolved_name"
+                    else:
+                        if not payload.create_missing:
+                            raise NovelEntityReferenceError(
+                                "Story Bible character entity is missing: "
+                                f"index={index}, name={name}"
+                            )
+                        entity = self._create_story_bible_entity(
+                            conn,
+                            novel_id,
+                            character,
+                            index=index,
+                            entity_id=None,
+                            canonical_name=name,
+                            now=now,
+                        )
+                        created_entities.append(entity)
+                        action = "created"
+
+                assert entity is not None
+                if entity.entity_id in bound_ids:
+                    raise NovelEntityReferenceError(
+                        "Story Bible character entity is bound more than once: "
+                        f"entity_id={entity.entity_id}"
+                    )
+                bound_ids.add(entity.entity_id)
+
+                character["entity_id"] = entity.entity_id
+                aligned_characters.append(character)
+                bindings.append(
+                    StoryBibleEntityBinding(
+                        character_index=index,
+                        entity_id=entity.entity_id,
+                        canonical_name=entity.canonical_name,
+                        action=action,
+                    )
+                )
+
+            characters_changed = aligned_characters != characters
+            changed = characters_changed or bool(created_entities)
+            if changed:
+                bible = self._advance_canon_revision(
+                    conn,
+                    novel_id,
+                    now,
+                    characters=(
+                        aligned_characters
+                        if characters_changed
+                        else None
+                    ),
+                )
+            else:
+                bible = self._story_bible_from_row(bible_row)
+
+            conn.commit()
+
+        return StoryBibleEntityAlignment(
+            story_bible=bible,
+            bindings=bindings,
+            created_entities=created_entities,
+            changed=changed,
+        )
+
+    def _create_story_bible_entity(
+        self,
+        conn: sqlite3.Connection,
+        novel_id: str,
+        character: dict[str, Any],
+        *,
+        index: int,
+        entity_id: str | None,
+        canonical_name: str,
+        now: str,
+    ) -> NovelEntity:
+        raw_aliases = character.get("aliases", [])
+        if raw_aliases is None:
+            raw_aliases = []
+        if not isinstance(raw_aliases, list):
+            raise NovelEntityReferenceError(
+                "Story Bible character aliases must be a list: "
+                f"index={index}"
+            )
+
+        description = character.get("description")
+        if not isinstance(description, str) or not description.strip():
+            role = character.get("role")
+            description = role if isinstance(role, str) else ""
+
+        try:
+            create = NovelEntityCreate(
+                entity_id=entity_id,
+                entity_type="character",
+                canonical_name=canonical_name,
+                aliases=raw_aliases,
+                description=description[:8000],
+                metadata={
+                    "source": "story_bible",
+                    "story_bible_character_index": index,
+                },
+            )
+        except ValidationError as exc:
+            raise NovelEntityReferenceError(
+                "Invalid Story Bible character entity: "
+                f"index={index}, error={exc.errors()}"
+            ) from exc
+
+        return self._insert_entity(
+            conn,
+            novel_id,
+            create,
+            now,
+        )
+
+    @staticmethod
     def _new_entity_id(entity_type: str) -> str:
         prefix = _ENTITY_ID_PREFIXES[entity_type]
         return f"{prefix}_{uuid.uuid4().hex}"
@@ -926,10 +1275,12 @@ class NovelProjectStorage:
             ],
         )
 
-    def create_entity(
+    def _insert_entity(
         self,
+        conn: sqlite3.Connection,
         novel_id: str,
         payload: NovelEntityCreate,
+        now: str,
     ) -> NovelEntity:
         entity_id = (
             payload.entity_id
@@ -939,6 +1290,59 @@ class NovelProjectStorage:
             payload.canonical_name,
             payload.aliases,
         )
+
+        try:
+            conn.execute(
+                """
+                INSERT INTO novel_entities (
+                    novel_id,
+                    entity_id,
+                    entity_type,
+                    canonical_name,
+                    canonical_name_normalized,
+                    aliases_json,
+                    description,
+                    revision,
+                    metadata_json,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                """,
+                (
+                    novel_id,
+                    entity_id,
+                    payload.entity_type,
+                    payload.canonical_name,
+                    normalize_entity_name(payload.canonical_name),
+                    _json_dump(aliases),
+                    payload.description,
+                    _json_dump(payload.metadata),
+                    now,
+                    now,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise NovelRevisionConflictError(
+                "Entity ID conflict: "
+                f"novel_id={novel_id}, entity_id={entity_id}"
+            ) from exc
+
+        row = conn.execute(
+            """
+            SELECT * FROM novel_entities
+            WHERE novel_id = ? AND entity_id = ?
+            """,
+            (novel_id, entity_id),
+        ).fetchone()
+        entity = self._entity_from_row(row)
+        self._replace_entity_aliases(conn, entity, now)
+        return entity
+
+    def create_entity(
+        self,
+        novel_id: str,
+        payload: NovelEntityCreate,
+    ) -> NovelEntity:
         now = _utc_now()
 
         with self._connect() as conn:
@@ -950,51 +1354,17 @@ class NovelProjectStorage:
             if project is None:
                 raise NovelProjectNotFoundError(novel_id)
 
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO novel_entities (
-                        novel_id,
-                        entity_id,
-                        entity_type,
-                        canonical_name,
-                        canonical_name_normalized,
-                        aliases_json,
-                        description,
-                        revision,
-                        metadata_json,
-                        created_at,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-                    """,
-                    (
-                        novel_id,
-                        entity_id,
-                        payload.entity_type,
-                        payload.canonical_name,
-                        normalize_entity_name(payload.canonical_name),
-                        _json_dump(aliases),
-                        payload.description,
-                        _json_dump(payload.metadata),
-                        now,
-                        now,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise NovelRevisionConflictError(
-                    "Entity ID conflict: "
-                    f"novel_id={novel_id}, entity_id={entity_id}"
-                ) from exc
-
-            row = conn.execute(
-                """
-                SELECT * FROM novel_entities
-                WHERE novel_id = ? AND entity_id = ?
-                """,
-                (novel_id, entity_id),
-            ).fetchone()
-            entity = self._entity_from_row(row)
-            self._replace_entity_aliases(conn, entity, now)
+            entity = self._insert_entity(
+                conn,
+                novel_id,
+                payload,
+                now,
+            )
+            self._advance_canon_revision(
+                conn,
+                novel_id,
+                now,
+            )
             conn.commit()
 
         return entity
@@ -1155,58 +1525,62 @@ class NovelProjectStorage:
             ).fetchone()
             entity = self._entity_from_row(updated_row)
             self._replace_entity_aliases(conn, entity, now)
+            self._advance_canon_revision(
+                conn,
+                novel_id,
+                now,
+            )
             conn.commit()
 
         return entity
 
-    def resolve_entity(
-        self,
+    @staticmethod
+    def _resolve_entity_rows(
+        conn: sqlite3.Connection,
         novel_id: str,
-        payload: EntityResolveRequest,
-    ) -> EntityResolution:
-        if not self._project_exists(novel_id):
-            raise NovelProjectNotFoundError(novel_id)
-
-        normalized_query = normalize_entity_name(payload.name)
+        name: str,
+        *,
+        entity_type: str | None = None,
+    ) -> tuple[str | None, list[sqlite3.Row]]:
+        normalized_query = normalize_entity_name(name)
         params: list[Any] = [
             novel_id,
-            payload.name,
+            name,
             normalized_query,
         ]
         type_filter = ""
-        if payload.entity_type is not None:
+        if entity_type is not None:
             type_filter = " AND e.entity_type = ?"
-            params.append(payload.entity_type)
+            params.append(entity_type)
 
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT e.*, a.alias, a.normalized_alias, a.alias_kind
-                FROM novel_entity_aliases AS a
-                JOIN novel_entities AS e
-                  ON e.novel_id = a.novel_id
-                 AND e.entity_id = a.entity_id
-                WHERE a.novel_id = ?
-                  AND (a.alias = ? OR a.normalized_alias = ?)
-                  {type_filter}
-                ORDER BY e.canonical_name_normalized, e.entity_id
-                """,
-                tuple(params),
-            ).fetchall()
+        rows = conn.execute(
+            f"""
+            SELECT e.*, a.alias, a.normalized_alias, a.alias_kind
+            FROM novel_entity_aliases AS a
+            JOIN novel_entities AS e
+              ON e.novel_id = a.novel_id
+             AND e.entity_id = a.entity_id
+            WHERE a.novel_id = ?
+              AND (a.alias = ? OR a.normalized_alias = ?)
+              {type_filter}
+            ORDER BY e.canonical_name_normalized, e.entity_id
+            """,
+            tuple(params),
+        ).fetchall()
 
         strategies = (
             (
                 "exact_canonical",
                 lambda row: (
                     row["alias_kind"] == "canonical"
-                    and row["alias"] == payload.name
+                    and row["alias"] == name
                 ),
             ),
             (
                 "exact_alias",
                 lambda row: (
                     row["alias_kind"] == "alias"
-                    and row["alias"] == payload.name
+                    and row["alias"] == name
                 ),
             ),
             (
@@ -1226,32 +1600,57 @@ class NovelProjectStorage:
         )
 
         for strategy, matches in strategies:
-            candidates: list[NovelEntity] = []
+            candidates: list[sqlite3.Row] = []
             seen_ids: set[str] = set()
-
             for row in rows:
                 if not matches(row) or row["entity_id"] in seen_ids:
                     continue
                 seen_ids.add(row["entity_id"])
-                candidates.append(self._entity_from_row(row))
+                candidates.append(row)
+            if candidates:
+                return strategy, candidates
 
-            if len(candidates) == 1:
-                return EntityResolution(
-                    query=payload.name,
-                    normalized_query=normalized_query,
-                    status="resolved",
-                    match_strategy=strategy,
-                    entity=candidates[0],
-                )
+        return None, []
 
-            if len(candidates) > 1:
-                return EntityResolution(
-                    query=payload.name,
-                    normalized_query=normalized_query,
-                    status="ambiguous",
-                    match_strategy=strategy,
-                    candidates=candidates,
-                )
+    def resolve_entity(
+        self,
+        novel_id: str,
+        payload: EntityResolveRequest,
+    ) -> EntityResolution:
+        if not self._project_exists(novel_id):
+            raise NovelProjectNotFoundError(novel_id)
+
+        normalized_query = normalize_entity_name(payload.name)
+        with self._connect() as conn:
+            strategy, rows = self._resolve_entity_rows(
+                conn,
+                novel_id,
+                payload.name,
+                entity_type=payload.entity_type,
+            )
+
+        candidates = [
+            self._entity_from_row(row)
+            for row in rows
+        ]
+
+        if len(candidates) == 1:
+            return EntityResolution(
+                query=payload.name,
+                normalized_query=normalized_query,
+                status="resolved",
+                match_strategy=strategy,
+                entity=candidates[0],
+            )
+
+        if len(candidates) > 1:
+            return EntityResolution(
+                query=payload.name,
+                normalized_query=normalized_query,
+                status="ambiguous",
+                match_strategy=strategy,
+                candidates=candidates,
+            )
 
         return EntityResolution(
             query=payload.name,

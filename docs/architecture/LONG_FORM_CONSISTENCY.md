@@ -74,12 +74,21 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - 多个实体同级命中时返回 ambiguous candidates，绝不默认选择第一个。
 - 更新使用 revision 乐观并发；实体 ID 不可修改。
 
-### P0.2：Story Bible Entity Alignment + Canon Context
+### P0.2：Story Bible Entity Alignment + Canon Context（已完成）
 
 - 为旧 `characters` 提供兼容导入/绑定，不直接删除自由结构字段。
 - 校验 Planner/Chapter Plan 中的 character ID 引用。
 - 构建带确定性预算的 Writer Context，明确 P0 Canon 不可被 Memory/RAG 覆盖。
 - 把 external knowledge 限制为世界知识证据，不允许决定小说内部人物事实。
+
+当前实现补充：
+
+- 旧 Story Bible 通过显式 API 对齐，不在普通 update 时静默创建实体。
+- 对齐在单一 SQLite 事务中完成，歧义、重复和 ID/名称冲突整体回滚。
+- Entity create/update 推进 Story Bible Canon revision，使既有规划正确 stale。
+- Planner 与领域写入均验证 canonical character/location references。
+- Agent Canon Context 位于 Memory/RAG 之前，最大 3600 字符。
+- `secret` 暂不进入人物 Canon profile；完整 POV Knowledge Scope 留到 P2。
 
 ### P0.3：Workflow Grounding
 

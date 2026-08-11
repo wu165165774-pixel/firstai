@@ -56,6 +56,8 @@ class AgentContext(BaseModel):
 
     use_memory: bool = True
 
+    use_canon: bool = True
+
     task_mode: AgentTaskMode = "auto"
 
     reasoning_effort: ReasoningEffort = "none"

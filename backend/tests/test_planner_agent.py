@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from app.agents.planner_agent import PlannerAgent
 from app.novels.schemas import (
     ChapterPlanCreate,
+    NovelEntityCreate,
     NovelPlanUpdate,
     NovelProjectCreate,
     NovelProjectUpdate,
@@ -334,6 +335,67 @@ class PlannerServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(result.persisted)
         self.assertEqual(manager.calls[0][0], "planner")
+
+    async def test_planner_context_includes_canonical_entities_once(self) -> None:
+        self.novel_service.create_entity(
+            self.novel_id,
+            NovelEntityCreate(
+                entity_id="char_lin_xue",
+                canonical_name="林雪",
+                aliases=["小雪"],
+            ),
+        )
+        service, manager = self._service(
+            {"story_premise": "Canonical plan"}
+        )
+
+        result = await service.generate(
+            self.novel_id,
+            PlannerGenerateRequest(
+                target="novel_plan",
+                instruction="Use canonical identities.",
+                use_memory=False,
+            ),
+        )
+
+        agent_context = manager.calls[0][1]
+        self.assertIn("canonical_entities", agent_context.instruction)
+        self.assertIn("char_lin_xue", agent_context.instruction)
+        self.assertFalse(agent_context.use_canon)
+        self.assertLessEqual(
+            result.metadata["planner_context_chars"],
+            PlannerService.CONTEXT_CHAR_BUDGET,
+        )
+
+    async def test_invalid_canonical_reference_rejects_candidate(self) -> None:
+        self.novel_service.create_entity(
+            self.novel_id,
+            NovelEntityCreate(
+                entity_id="char_lin_xue",
+                canonical_name="林雪",
+            ),
+        )
+        service, _ = self._service(
+            {
+                "story_premise": "Invalid reference",
+                "character_arcs": [
+                    {
+                        "character_id": "char_missing",
+                        "character_name": "不存在的人物",
+                    }
+                ],
+            }
+        )
+
+        with self.assertRaises(PlannerOutputError):
+            await service.generate(
+                self.novel_id,
+                PlannerGenerateRequest(
+                    target="novel_plan",
+                    instruction="Generate a plan.",
+                    use_memory=False,
+                ),
+            )
 
     async def test_generate_story_arc_candidate(self) -> None:
         service, _ = self._service(

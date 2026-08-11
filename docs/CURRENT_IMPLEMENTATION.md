@@ -2169,3 +2169,69 @@ Planner database tables remained absent
 docs/architecture/LONG_FORM_CONSISTENCY.md
 docs/ROADMAP.md
 ```
+
+## v0.15.0-alpha.19 — Sprint 08A.8 Story Bible Entity Alignment + Canon Context
+
+NovelForge 完成一致性 P0.2，将 legacy Story Bible、Entity Registry、Planner 和 Agent Context 串成可验收的 Canon 身份链。
+
+新增 API：
+
+```text
+POST /api/v1/novels/{novel_id}/story-bible/entities/align
+```
+
+新增能力：
+
+- legacy `id`、`character_id`、`entity_id` 兼容识别。
+- Story Bible 人物显式绑定 stable entity ID。
+- 缺失实体可在显式操作中创建。
+- 同名/别名歧义不猜测。
+- 重复实体绑定、ID/名称冲突、类型冲突整体回滚。
+- `expected_revision` 乐观并发。
+- 第二次无变化对齐不增加 revision。
+- Entity create/update 推进 Canon revision，使旧规划进入 stale。
+- Novel Plan、Story Arc、Chapter Plan 人物/地点引用校验。
+- Planner candidate 输出未知 Canon ID 时拒绝。
+- 显式接受被编辑成未知 ID 时返回 HTTP 409。
+- `CanonContextBuilder` 以 P0 system message 注入 Agent。
+- 3600 字符确定性 Canon budget。
+- active entity / POV entity 定向选择。
+- Memory/RAG 明确为低优先级 evidence。
+- Planner target-aware context 内携带 compact canonical entities，且不重复注入通用 Canon block。
+
+保持不变：
+
+```text
+/planner/generate remains candidate-only and persisted=false
+/planner/accept remains an explicit action
+no Planner persistence tables
+fixed coordinates and stale gates remain enforced
+legacy Story Bible free-form fields remain readable and writable
+unmigrated entity types remain compatible
+```
+
+自动化验证：
+
+```text
+22/22 Canon/Alignment focused tests passed
+35/35 Planner focused tests passed
+15/15 Entity Registry focused tests passed
+278/278 full regression passed
+Python compileall passed
+Docker Compose config passed
+git diff --check passed
+```
+
+真实 `qwen3:8b` 验收：
+
+```text
+Novel Plan: prompt 1412, completion 2171, context chars 1593
+Story Arc: prompt 1607, completion 1649, context chars 2193
+Chapter Plan: prompt 1691, completion 1529, context chars 2518
+all candidates persisted=false
+all candidate character references used canonical Registry IDs
+invalid canonical acceptance -> HTTP 409 and no persistence
+Ollama n_ctx=4096, truncated=0/0/0
+Backend restart persistence passed
+Planner tables=[]
+```

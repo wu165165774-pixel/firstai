@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .schemas import (
     ChapterPlan,
     ChapterPlanCreate,
@@ -21,10 +23,17 @@ from .schemas import (
     StoryArcRevision,
     StoryArcUpdate,
     StoryBible,
+    StoryBibleEntityAlignRequest,
+    StoryBibleEntityAlignment,
     StoryBibleRevision,
     StoryBibleUpdate,
+    normalize_entity_name,
 )
-from .storage import NovelProjectStorage
+from .storage import (
+    NovelEntityReferenceError,
+    NovelProjectNotFoundError,
+    NovelProjectStorage,
+)
 
 
 class NovelProjectService:
@@ -83,7 +92,38 @@ class NovelProjectService:
         novel_id: str,
         payload: StoryBibleUpdate,
     ) -> StoryBible:
+        if payload.characters is not None:
+            references = [
+                (
+                    str(character.get("entity_id") or "").strip(),
+                    "character",
+                    str(
+                        character.get("canonical_name")
+                        or character.get("name")
+                        or ""
+                    ).strip(),
+                    f"story_bible.characters[{index}]",
+                )
+                for index, character in enumerate(payload.characters)
+                if isinstance(character, dict)
+                and character.get("entity_id")
+            ]
+            self._validate_entity_references(
+                novel_id,
+                references,
+                only_when_registry_exists=False,
+            )
         return self.storage.update_story_bible(
+            novel_id,
+            payload,
+        )
+
+    def align_story_bible_entities(
+        self,
+        novel_id: str,
+        payload: StoryBibleEntityAlignRequest,
+    ) -> StoryBibleEntityAlignment:
+        return self.storage.align_story_bible_entities(
             novel_id,
             payload,
         )
@@ -166,6 +206,200 @@ class NovelProjectService:
             payload,
         )
 
+    def _validate_entity_references(
+        self,
+        novel_id: str,
+        references: list[tuple[str, str, str, str]],
+        *,
+        only_when_registry_exists: bool = True,
+    ) -> None:
+        if not references:
+            return
+
+        loaded: dict[str, NovelEntity] = {}
+        if only_when_registry_exists:
+            enabled_types = {
+                entity_type
+                for _, entity_type, _, _ in references
+                if self.storage.list_entities(
+                    novel_id,
+                    entity_type=entity_type,
+                    limit=1,
+                )
+            }
+            selected: list[tuple[str, str, str, str]] = []
+            for reference in references:
+                entity_id, entity_type, _, _ = reference
+                try:
+                    loaded[entity_id] = self.storage.get_entity(
+                        novel_id,
+                        entity_id,
+                    )
+                except NovelProjectNotFoundError:
+                    if entity_type not in enabled_types:
+                        continue
+                selected.append(reference)
+            references = selected
+            if not references:
+                return
+
+        for entity_id, entity_type, display_name, source in references:
+            if not entity_id:
+                continue
+
+            entity = loaded.get(entity_id)
+            if entity is None:
+                try:
+                    entity = self.storage.get_entity(
+                        novel_id,
+                        entity_id,
+                    )
+                except NovelProjectNotFoundError as exc:
+                    raise NovelEntityReferenceError(
+                        "Unknown canonical entity reference: "
+                        f"source={source}, entity_id={entity_id}"
+                    ) from exc
+                loaded[entity_id] = entity
+
+            if entity.entity_type != entity_type:
+                raise NovelEntityReferenceError(
+                    "Canonical entity type mismatch: "
+                    f"source={source}, entity_id={entity_id}, "
+                    f"expected={entity_type}, actual={entity.entity_type}"
+                )
+
+            if display_name:
+                valid_names = {
+                    normalize_entity_name(entity.canonical_name),
+                    *(
+                        normalize_entity_name(alias)
+                        for alias in entity.aliases
+                    ),
+                }
+                if normalize_entity_name(display_name) not in valid_names:
+                    raise NovelEntityReferenceError(
+                        "Canonical entity ID/name conflict: "
+                        f"source={source}, entity_id={entity_id}, "
+                        f"name={display_name}, "
+                        f"canonical_name={entity.canonical_name}"
+                    )
+
+    @staticmethod
+    def _planning_entity_references(
+        target: str,
+        value: Any,
+    ) -> list[tuple[str, str, str, str]]:
+        references: list[tuple[str, str, str, str]] = []
+
+        if target == "novel_plan":
+            for beat_index, plot_beat in enumerate(
+                getattr(value, "main_plot", None) or []
+            ):
+                for entity_index, entity_id in enumerate(
+                    plot_beat.character_ids
+                ):
+                    references.append(
+                        (
+                            entity_id,
+                            "character",
+                            "",
+                            "main_plot"
+                            f"[{beat_index}].character_ids[{entity_index}]",
+                        )
+                    )
+            for index, arc in enumerate(
+                getattr(value, "character_arcs", None) or []
+            ):
+                references.append(
+                    (
+                        arc.character_id,
+                        "character",
+                        getattr(arc, "character_name", ""),
+                        f"character_arcs[{index}]",
+                    )
+                )
+
+        elif target == "story_arc":
+            for index, progression in enumerate(
+                getattr(value, "character_progression", None) or []
+            ):
+                references.append(
+                    (
+                        progression.character_id,
+                        "character",
+                        progression.character_name,
+                        f"character_progression[{index}]",
+                    )
+                )
+            for beat_index, turning_point in enumerate(
+                getattr(value, "turning_points", None) or []
+            ):
+                for entity_index, entity_id in enumerate(
+                    turning_point.character_ids
+                ):
+                    references.append(
+                        (
+                            entity_id,
+                            "character",
+                            "",
+                            "turning_points"
+                            f"[{beat_index}].character_ids[{entity_index}]",
+                        )
+                    )
+
+        elif target == "chapter_plan":
+            pov_character_id = getattr(
+                value,
+                "pov_character_id",
+                None,
+            )
+            if pov_character_id:
+                references.append(
+                    (
+                        pov_character_id,
+                        "character",
+                        getattr(value, "pov_character_name", ""),
+                        "pov_character_id",
+                    )
+                )
+            for beat_index, beat in enumerate(
+                getattr(value, "scene_beats", None) or []
+            ):
+                for entity_index, entity_id in enumerate(
+                    beat.character_ids
+                ):
+                    references.append(
+                        (
+                            entity_id,
+                            "character",
+                            "",
+                            "scene_beats"
+                            f"[{beat_index}].character_ids[{entity_index}]",
+                        )
+                    )
+                if beat.location_id:
+                    references.append(
+                        (
+                            beat.location_id,
+                            "location",
+                            "",
+                            f"scene_beats[{beat_index}].location_id",
+                        )
+                    )
+
+        return references
+
+    def validate_planning_entity_references(
+        self,
+        novel_id: str,
+        target: str,
+        value: Any,
+    ) -> None:
+        self._validate_entity_references(
+            novel_id,
+            self._planning_entity_references(target, value),
+        )
+
     def get_novel_plan(
         self,
         novel_id: str,
@@ -180,6 +414,11 @@ class NovelProjectService:
         expected_project_revision: int | None = None,
         expected_story_bible_revision: int | None = None,
     ) -> NovelPlan:
+        self.validate_planning_entity_references(
+            novel_id,
+            "novel_plan",
+            payload,
+        )
         return self.storage.update_novel_plan(
             novel_id,
             payload,
@@ -217,6 +456,11 @@ class NovelProjectService:
         expected_story_bible_revision: int | None = None,
         expected_novel_plan_revision: int | None = None,
     ) -> StoryArc:
+        self.validate_planning_entity_references(
+            novel_id,
+            "story_arc",
+            payload,
+        )
         return self.storage.create_story_arc(
             novel_id,
             payload,
@@ -256,6 +500,11 @@ class NovelProjectService:
         arc_id: str,
         payload: StoryArcUpdate,
     ) -> StoryArc:
+        self.validate_planning_entity_references(
+            novel_id,
+            "story_arc",
+            payload,
+        )
         return self.storage.update_story_arc(
             novel_id,
             arc_id,
@@ -297,6 +546,11 @@ class NovelProjectService:
         expected_novel_plan_revision: int | None = None,
         expected_story_arc_revision: int | None = None,
     ) -> ChapterPlan:
+        self.validate_planning_entity_references(
+            novel_id,
+            "chapter_plan",
+            payload,
+        )
         return self.storage.create_chapter_plan(
             novel_id,
             payload,
@@ -339,6 +593,11 @@ class NovelProjectService:
         chapter_plan_id: str,
         payload: ChapterPlanUpdate,
     ) -> ChapterPlan:
+        self.validate_planning_entity_references(
+            novel_id,
+            "chapter_plan",
+            payload,
+        )
         return self.storage.update_chapter_plan(
             novel_id,
             chapter_plan_id,

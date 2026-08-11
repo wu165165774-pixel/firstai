@@ -42,6 +42,12 @@ EntityResolutionStrategy = Literal[
     "normalized_alias",
 ]
 
+StoryBibleEntityBindingAction = Literal[
+    "existing_id",
+    "resolved_name",
+    "created",
+]
+
 
 def clean_entity_name(value: Any) -> str:
     return " ".join(str(value or "").split())
@@ -153,6 +159,20 @@ class StoryBibleRevision(BaseModel):
     created_at: str
 
 
+class StoryBibleEntityAlignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
+    create_missing: bool = True
+
+
+class StoryBibleEntityBinding(BaseModel):
+    character_index: int = Field(ge=0)
+    entity_id: str
+    canonical_name: str
+    action: StoryBibleEntityBindingAction
+
+
 class NovelEntityCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -231,6 +251,17 @@ class NovelEntity(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
+
+
+class StoryBibleEntityAlignment(BaseModel):
+    story_bible: StoryBible
+    bindings: list[StoryBibleEntityBinding] = Field(
+        default_factory=list
+    )
+    created_entities: list[NovelEntity] = Field(
+        default_factory=list
+    )
+    changed: bool = False
 
 
 class EntityResolveRequest(BaseModel):
@@ -565,6 +596,12 @@ class StoryBibleRevisionListResponse(BaseModel):
     code: int = 0
     message: str = "success"
     data: list[StoryBibleRevision] = Field(default_factory=list)
+
+
+class StoryBibleEntityAlignmentResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: StoryBibleEntityAlignment
 
 
 class NovelPlanResponse(BaseModel):
