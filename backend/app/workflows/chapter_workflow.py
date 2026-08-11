@@ -14,6 +14,12 @@ from pydantic import ValidationError
 
 from app.agents.manager import AgentManager
 from app.agents.schemas import AgentContext
+from app.llm.schemas import ChatMessage
+from app.workflows.grounding import (
+    ChapterWorkflowGrounding,
+    ChapterWorkflowGroundingService,
+    chapter_workflow_grounding_service,
+)
 from app.workflows.quality import (
     QualityTracker,
     build_revision_diff,
@@ -55,9 +61,14 @@ class ChapterWorkflow:
     def __init__(
         self,
         agent_manager: AgentManager,
+        grounding_service: ChapterWorkflowGroundingService | None = None,
     ) -> None:
 
         self._agent_manager = agent_manager
+        self._grounding_service = (
+            grounding_service
+            or chapter_workflow_grounding_service
+        )
 
     @staticmethod
     def _read_int(
@@ -865,6 +876,7 @@ class ChapterWorkflow:
     def _context(
         request: ChapterWorkflowRequest,
         *,
+        grounding: ChapterWorkflowGrounding | None,
         instruction: str,
         stage: str,
         round_index: int,
@@ -893,6 +905,20 @@ class ChapterWorkflow:
             }
         )
 
+        messages: list[ChatMessage] = []
+        if grounding is not None:
+            metadata.update(grounding.metadata)
+            messages.append(
+                ChatMessage(
+                    role="system",
+                    content=grounding.message,
+                    metadata={
+                        "source": "chapter_plan_grounding",
+                        "priority": "P0.3",
+                    },
+                )
+            )
+
         return AgentContext.model_validate(
             {
                 "user_id": request.user_id,
@@ -900,10 +926,15 @@ class ChapterWorkflow:
                 "instruction": instruction,
                 "provider": request.provider,
                 "model": request.model,
+                "messages": messages,
                 "use_memory": (
                     request.use_memory
                 ),
-                "task_mode": "creative",
+                "task_mode": (
+                    "grounded"
+                    if grounding is not None
+                    else "creative"
+                ),
                 "reasoning_effort": (
                     reasoning_effort
                 ),
@@ -916,6 +947,7 @@ class ChapterWorkflow:
     async def _execute_review_with_retry(
         self,
         request: ChapterWorkflowRequest,
+        grounding: ChapterWorkflowGrounding | None,
         current_content: str,
         review_round: int,
         unresolved_issues: list[
@@ -971,6 +1003,7 @@ class ChapterWorkflow:
                         agent_name="review",
                         context=self._context(
                             request,
+                            grounding=grounding,
                             instruction=(
                                 self
                                 ._review_instruction(
@@ -1037,9 +1070,18 @@ class ChapterWorkflow:
                 review_step
             )
 
+            output_truncated = (
+                review_step.finish_reason
+                == "length"
+            )
+            review_step.metadata[
+                "review_output_truncated"
+            ] = output_truncated
+
             if (
                 review_step.success
                 and review_step.content.strip()
+                and not output_truncated
             ):
 
                 return (
@@ -1048,10 +1090,16 @@ class ChapterWorkflow:
                     None,
                 )
 
-            last_error = (
-                "ReviewAgent returned an empty "
-                "or unsuccessful result."
-            )
+            if output_truncated:
+                last_error = (
+                    "ReviewAgent output was truncated "
+                    "(finish_reason=length)."
+                )
+            else:
+                last_error = (
+                    "ReviewAgent returned an empty "
+                    "or unsuccessful result."
+                )
 
         return (
             attempt_steps,
@@ -1146,6 +1194,12 @@ class ChapterWorkflow:
         request: ChapterWorkflowRequest,
     ) -> ChapterWorkflowResult:
 
+        grounding = (
+            self._grounding_service.resolve(request)
+            if self._grounding_service.has_binding(request)
+            else None
+        )
+
         steps: list[WorkflowStep] = []
         review_history: list[
             ReviewReport
@@ -1167,6 +1221,13 @@ class ChapterWorkflow:
             metadata: dict[str, Any],
         ) -> ChapterWorkflowResult:
 
+            result_metadata = (
+                dict(grounding.metadata)
+                if grounding is not None
+                else {}
+            )
+            result_metadata.update(metadata)
+
             return self._result(
                 status=status,
                 draft=draft,
@@ -1186,7 +1247,7 @@ class ChapterWorkflow:
                 quality_gate_passed=(
                     quality_gate_passed
                 ),
-                metadata=metadata,
+                metadata=result_metadata,
                 quality_tracker=(
                     quality_tracker
                 ),
@@ -1207,6 +1268,7 @@ class ChapterWorkflow:
                     agent_name="chapter",
                     context=self._context(
                         request,
+                        grounding=grounding,
                         instruction=(
                             request.instruction
                         ),
@@ -1295,6 +1357,7 @@ class ChapterWorkflow:
                 review_error,
             ) = await self._execute_review_with_retry(
                 request,
+                grounding,
                 current_content,
                 review_round,
                 previous_unresolved,
@@ -1492,6 +1555,7 @@ class ChapterWorkflow:
                         agent_name="rewrite",
                         context=self._context(
                             request,
+                            grounding=grounding,
                             instruction=(
                                 self
                                 ._rewrite_instruction(

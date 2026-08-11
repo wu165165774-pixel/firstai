@@ -24,6 +24,11 @@ from app.workflows.async_queue import (
 from app.workflows.chapter_workflow import (
     ChapterWorkflow,
 )
+from app.workflows.grounding import (
+    ChapterWorkflowGroundingConflictError,
+    ChapterWorkflowGroundingNotFoundError,
+    chapter_workflow_grounding_service,
+)
 from app.workflows.run_schemas import (
     WorkflowAsyncSubmissionResponse,
     WorkflowDeadLetterListResponse,
@@ -89,7 +94,10 @@ def _async_executor(
 
         _async_executor_instance = (
             AsyncWorkflowExecutor(
-                bootstrap_agent_manager
+                bootstrap_agent_manager,
+                grounding_service=(
+                    chapter_workflow_grounding_service
+                ),
             )
         )
 
@@ -116,7 +124,36 @@ def _run_service(
             request
         ),
         WorkflowRunStorage(),
+        grounding_service=(
+            chapter_workflow_grounding_service
+        ),
     )
+
+
+def _validate_workflow_grounding(
+    payload: ChapterWorkflowRequest,
+) -> None:
+    if not chapter_workflow_grounding_service.has_binding(payload):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "chapter_plan_id and chapter_plan_revision are "
+                "required for Chapter Workflow execution."
+            ),
+        )
+
+    try:
+        chapter_workflow_grounding_service.resolve(payload)
+    except ChapterWorkflowGroundingNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ChapterWorkflowGroundingConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(
@@ -130,15 +167,29 @@ async def execute_chapter_workflow(
     request: Request,
 ) -> ChapterWorkflowResponse:
 
+    _validate_workflow_grounding(payload)
+
     workflow = ChapterWorkflow(
         _agent_manager(
             request
-        )
+        ),
+        grounding_service=(
+            chapter_workflow_grounding_service
+        ),
     )
 
-    result = await workflow.run(
-        payload
-    )
+    try:
+        result = await workflow.run(payload)
+    except ChapterWorkflowGroundingNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ChapterWorkflowGroundingConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
     return ChapterWorkflowResponse(
         data=result
@@ -154,11 +205,20 @@ async def create_chapter_workflow_run(
     request: Request,
 ) -> WorkflowRunResponse:
 
-    detail = await _run_service(
-        request
-    ).start(
-        payload
-    )
+    _validate_workflow_grounding(payload)
+
+    try:
+        detail = await _run_service(request).start(payload)
+    except ChapterWorkflowGroundingNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ChapterWorkflowGroundingConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
     return WorkflowRunResponse(
         data=detail
@@ -268,6 +328,24 @@ async def resume_workflow_run(
             detail=str(exc),
         ) from exc
 
+    except ChapterWorkflowGroundingNotFoundError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_404_NOT_FOUND
+            ),
+            detail=str(exc),
+        ) from exc
+
+    except ChapterWorkflowGroundingConflictError as exc:
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail=str(exc),
+        ) from exc
+
     return WorkflowRunResponse(
         data=detail
     )
@@ -319,6 +397,8 @@ async def enqueue_chapter_workflow_run(
         le=86400.0,
     ),
 ) -> WorkflowAsyncSubmissionResponse:
+
+    _validate_workflow_grounding(payload)
 
     executor = _async_executor(
         request

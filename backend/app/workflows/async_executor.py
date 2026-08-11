@@ -12,6 +12,10 @@ from app.workflows.async_queue import (
 from app.workflows.chapter_workflow import (
     ChapterWorkflow,
 )
+from app.workflows.grounding import (
+    ChapterWorkflowGroundingService,
+    chapter_workflow_grounding_service,
+)
 from app.workflows.run_schemas import (
     WorkflowAsyncSubmission,
     WorkflowJobControl,
@@ -41,10 +45,16 @@ class AsyncWorkflowExecutor:
         default_timeout_seconds: float | None = None,
         poll_interval: float = 0.25,
         execution_mode: str | None = None,
+        grounding_service: ChapterWorkflowGroundingService | None = None,
     ) -> None:
 
         self._agent_manager = (
             agent_manager
+        )
+
+        self._grounding_service = (
+            grounding_service
+            or chapter_workflow_grounding_service
         )
 
         self._queue = WorkflowAsyncQueue(
@@ -720,7 +730,8 @@ class AsyncWorkflowExecutor:
 
             result = await asyncio.wait_for(
                 ChapterWorkflow(
-                    self._agent_manager
+                    self._agent_manager,
+                    grounding_service=self._grounding_service,
                 ).run(
                     request
                 ),

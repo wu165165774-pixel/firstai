@@ -5,6 +5,12 @@ from app.workflows.chapter_workflow import (
     ChapterWorkflow,
     ReviewOutputParseError,
 )
+from app.workflows.grounding import (
+    ChapterWorkflowGrounding,
+    ChapterWorkflowGroundingConflictError,
+    ChapterWorkflowGroundingNotFoundError,
+    ChapterWorkflowGroundingService,
+)
 from app.workflows.schemas import (
     ChapterWorkflowRequest,
     ChapterWorkflowResponse,
@@ -23,6 +29,10 @@ chapter_workflow = ChapterWorkflow(
 
 __all__ = [
     "ChapterWorkflow",
+    "ChapterWorkflowGrounding",
+    "ChapterWorkflowGroundingConflictError",
+    "ChapterWorkflowGroundingNotFoundError",
+    "ChapterWorkflowGroundingService",
     "ChapterWorkflowRequest",
     "ChapterWorkflowResponse",
     "ChapterWorkflowResult",

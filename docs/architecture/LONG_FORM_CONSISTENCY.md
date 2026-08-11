@@ -90,11 +90,13 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - Agent Canon Context 位于 Memory/RAG 之前，最大 3600 字符。
 - `secret` 暂不进入人物 Canon profile；完整 POV Knowledge Scope 留到 P2。
 
-### P0.3：Workflow Grounding
+### P0.3：Workflow Grounding（已完成）
 
 - Chapter Workflow 显式绑定 fresh Chapter Plan revision。
 - 建立 `active_character_ids`、`active_location_ids` 和 `pov_character_id`。
-- 只为活跃实体加载 Canon、当前状态、关系与相关检索证据。
+- 使用 3600 字符确定性预算加载 selected Plan/Arc/Chapter、活跃实体和相邻章节摘要。
+- Chapter、Review、Rewrite 共享权威规划上下文，并确保 Memory/RAG 只作为低优先级检索证据。
+- 同步、resume、异步队列和外部 Worker 均保存绑定并在执行点重新校验 freshness。
 
 ## 8. P1 / P2 路线
 

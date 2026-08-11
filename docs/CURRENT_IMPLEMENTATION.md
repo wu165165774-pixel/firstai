@@ -2235,3 +2235,76 @@ Ollama n_ctx=4096, truncated=0/0/0
 Backend restart persistence passed
 Planner tables=[]
 ```
+
+## v0.15.0-alpha.20 — Sprint 08B.1 Chapter Plan -> Chapter Workflow Bridge
+
+NovelForge 完成一致性 P0.3，将已接受的 Chapter Plan revision 正式接入 Chapter Production Workflow。
+
+新增能力：
+
+- 新 Chapter Workflow HTTP 执行强制携带 `chapter_plan_id` 和 `chapter_plan_revision`。
+- 在任何 Agent 调用前加载并验证 Project、Story Bible、fresh Novel Plan、selected Story Arc 和 selected Chapter Plan。
+- revision mismatch、stale Plan/Arc/Chapter 统一在生成前返回 HTTP 409。
+- selected Project/Bible/Plan/Arc/Chapter 与紧邻章节形成 3600 字符确定性 Grounding Context。
+- 自动派生 POV、active character/location IDs、continuity dependencies 和 Memory query。
+- Chapter、Review、Rewrite 全阶段共享 P0.3 权威规划 system message。
+- Canon 与规划上下文位于 Memory/RAG 证据之前。
+- Workflow result 与 persisted Run 记录 binding、source revisions、context chars、active entities 和 adjacent chapters。
+- sync Run、resume、async submission 和外部 Worker 均重新校验相同绑定。
+- 入队后规划变 stale 的 Job 在 LLM 调用前进入 dead-letter。
+- Qwen Review 返回 `finish_reason=length` 时自动使用无推理 fallback 重试，不解析半截 JSON。
+
+HTTP 语义：
+
+```text
+missing Chapter Plan binding -> 422
+unknown Chapter Plan -> 404
+revision conflict -> 409
+stale Novel Plan / Story Arc / Chapter Plan -> 409
+```
+
+保持不变：
+
+```text
+Planner generate remains candidate-only and persisted=false
+Planner accept remains explicit
+Novel Plan / Story Arc / Chapter Plan remain independent persisted domains
+chapter_plans still do not physically store volume_number or arc_number
+Memory/RAG remains supporting evidence, not Canon or accepted planning authority
+no new Workflow Grounding persistence table
+```
+
+自动化验证：
+
+```text
+24/24 Chapter Workflow focused tests passed
+14/14 Workflow Grounding focused tests passed
+293/293 full regression passed
+Python compileall passed
+Docker Compose config passed
+git diff --check passed
+```
+
+真实 `qwen3:8b` 验收：
+
+```text
+grounding_context_chars = 3595 / 3600
+sync resume Review total tokens = 3997 / 4096
+external Worker Draft total tokens = 3127 / 4096
+external Worker Review total tokens = 4001 / 4096
+sync resume quality gate = passed
+external Worker queue/run = completed/succeeded
+all real Chapter/Review steps grounding_enforced=true
+```
+
+竞态与重启验收：
+
+```text
+fresh Job submitted while Worker stopped
+Story Bible revision advanced 5 -> 6
+Worker revalidation rejected stale Novel Plan
+Job dead_lettered with latest_content_length=0
+sync and async stale gates returned HTTP 409
+Backend/Worker restart persistence passed
+OpenAPI binding requirement persisted
+```

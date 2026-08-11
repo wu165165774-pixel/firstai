@@ -6,6 +6,10 @@ from typing import Any
 from app.workflows.chapter_workflow import (
     ChapterWorkflow,
 )
+from app.workflows.grounding import (
+    ChapterWorkflowGroundingService,
+    chapter_workflow_grounding_service,
+)
 from app.workflows.run_schemas import (
     WorkflowRunDetail,
     WorkflowRunSummary,
@@ -127,6 +131,7 @@ class WorkflowRunService:
         self,
         agent_manager: Any,
         storage: WorkflowRunStorage,
+        grounding_service: ChapterWorkflowGroundingService | None = None,
     ) -> None:
 
         self._agent_manager = (
@@ -134,6 +139,10 @@ class WorkflowRunService:
         )
 
         self._storage = storage
+        self._grounding_service = (
+            grounding_service
+            or chapter_workflow_grounding_service
+        )
 
     @staticmethod
     def _detail(
@@ -175,7 +184,8 @@ class WorkflowRunService:
         try:
 
             result = await ChapterWorkflow(
-                self._agent_manager
+                self._agent_manager,
+                grounding_service=self._grounding_service,
             ).run(
                 request
             )
@@ -346,7 +356,8 @@ class WorkflowRunService:
         try:
 
             result = await ChapterWorkflow(
-                checkpoint_manager
+                checkpoint_manager,
+                grounding_service=self._grounding_service,
             ).run(
                 resume_request
             )

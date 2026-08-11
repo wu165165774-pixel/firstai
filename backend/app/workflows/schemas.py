@@ -9,6 +9,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    model_validator,
 )
 
 from app.llm.schemas import ReasoningEffort
@@ -293,7 +294,16 @@ class WorkflowUsage(BaseModel):
 class ChapterWorkflowRequest(BaseModel):
 
     model_config = ConfigDict(
-        extra="forbid"
+        extra="forbid",
+        json_schema_extra={
+            "required": [
+                "user_id",
+                "novel_id",
+                "instruction",
+                "chapter_plan_id",
+                "chapter_plan_revision",
+            ]
+        },
     )
 
     user_id: str = Field(
@@ -306,6 +316,21 @@ class ChapterWorkflowRequest(BaseModel):
 
     instruction: str = Field(
         min_length=1
+    )
+
+    # Optional in the Python model only so persisted runs created
+    # before Sprint 08B.1 remain readable and resumable as records.
+    # All HTTP entry points for new workflow execution require both
+    # fields and ChapterWorkflow grounds them before any Agent call.
+    chapter_plan_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+
+    chapter_plan_revision: int | None = Field(
+        default=None,
+        ge=1,
     )
 
     provider: str = "qwen_local"
@@ -403,6 +428,21 @@ class ChapterWorkflowRequest(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict
     )
+
+    @model_validator(mode="after")
+    def validate_chapter_plan_binding(
+        self,
+    ) -> "ChapterWorkflowRequest":
+        if (
+            self.chapter_plan_id is None
+        ) != (
+            self.chapter_plan_revision is None
+        ):
+            raise ValueError(
+                "chapter_plan_id and chapter_plan_revision "
+                "must be supplied together."
+            )
+        return self
 
 
 class ChapterWorkflowResult(BaseModel):

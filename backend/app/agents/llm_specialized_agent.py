@@ -42,6 +42,15 @@ class LLMSpecializedAgent(NovelAgent):
         context: AgentContext,
     ) -> AgentResult:
 
+        plan_grounding_enforced = (
+            context.task_mode == "grounded"
+            and any(
+                message.metadata.get("source")
+                == "chapter_plan_grounding"
+                for message in context.messages
+            )
+        )
+
         result = await super().run(
             context
         )
@@ -55,7 +64,9 @@ class LLMSpecializedAgent(NovelAgent):
                     context.task_mode
                 ),
                 "llm_called": True,
-                "grounding_enforced": False,
+                "grounding_enforced": (
+                    plan_grounding_enforced
+                ),
                 "recommended_reasoning_effort": (
                     self.recommended_reasoning_effort
                 ),

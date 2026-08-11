@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.19
+v0.15.0-alpha.20
 ```
 
 已完成的主干能力：
@@ -47,11 +47,12 @@ v0.15.0-alpha.19
 - target-aware compact context 和确定性 context budget；真实三阶段 Qwen 验收通过。
 - Canonical Entity Registry、稳定 entity_id、确定性 Alias Resolver 和歧义候选返回。
 - Story Bible 显式实体对齐、规划引用校验和 3600 字符 P0 Canon Context。
+- Chapter Workflow 显式绑定 fresh Chapter Plan，并在同步、恢复和外部 Worker 执行中注入有预算的 P0.3 Grounding。
 
 下一开发项：
 
 ```text
-Sprint 08B.1 - Chapter Plan -> Chapter Workflow Bridge
+Sprint 08B.2 - Manuscript / Chapter Draft / Revision Domain
 状态：待开发
 ```
 
@@ -62,7 +63,7 @@ Sprint 08B.1 - Chapter Plan -> Chapter Workflow Bridge
 | 08A.6 | Planner 候选审核与显式接受 | 已完成 | 生成不落库；接受独立触发；revision、stale、坐标和领域校验全部通过 |
 | 08A.7 | Canonical Entity Foundation | 已完成 | 稳定 entity_id、Entity Registry、确定性 Alias Resolver、歧义不猜测和重启持久化通过 |
 | 08A.8 | Story Bible Entity Alignment + Canon Context | 已完成 | 旧 Bible 兼容绑定实体；Planner/Writer 引用可校验；Canon Context 有优先级和预算 |
-| 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 待开发 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
+| 08B.1 | Chapter Plan -> Chapter Workflow 桥接 | 已完成 | Workflow 必须绑定 fresh Chapter Plan，并自动形成 grounded Chapter Agent 输入 |
 | 08B.2 | Manuscript / Chapter Draft / Revision 领域 | 待开发 | 正文拥有稳定 ID、版本历史、审核状态、来源规划 revision 和恢复能力 |
 | 08B.3 | 全小说 Orchestrator | 待开发 | 可按 Arc/Chapter 顺序持续生成，支持暂停、恢复、失败重试和人工门禁 |
 | 08C.1 | 三层 Memory | 待开发 | Session、Working、Long-term 的职责、生命周期和提升/淘汰规则独立可验收 |
@@ -140,6 +141,16 @@ Chapter Workflow 请求将显式引用 `chapter_plan_id` 和 revision。系统�
 - 明确的 POV、目标、scene beats、continuity dependencies 和字数预算。
 
 08B.1 在 08A.8 完成后启动，避免把自由文本人物名称继续带入新的 Writer 桥接层。
+
+当前已完成：
+
+- 新 Workflow HTTP 请求强制携带 `chapter_plan_id` 和 `chapter_plan_revision`。
+- 在任何 Agent 调用前校验 Project、Bible、Novel Plan、selected Arc 和 selected Chapter Plan freshness。
+- 3600 字符确定性 P0.3 Grounding 包含 selected Chapter Plan、Arc、总体规划摘要、活跃实体和相邻章节摘要。
+- Chapter、Review、Rewrite 全阶段共享同一权威规划上下文，且位于 Memory/RAG 证据之前。
+- 持久化 Run、resume、异步队列和外部 Worker 保存并重新验证相同绑定。
+- 入队后规划变 stale 的 Job 在生成前进入 dead-letter。
+- Review 输出以 `finish_reason=length` 截断时使用无推理回退重试。
 
 ### Sprint 08B.2 - 正文领域
 

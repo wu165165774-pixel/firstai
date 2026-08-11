@@ -677,6 +677,86 @@ class ChapterWorkflowTests(
             "Draft.",
         )
 
+    async def test_truncated_review_retries_without_reasoning(
+        self,
+    ) -> None:
+
+        truncated_review = make_result(
+            agent="review",
+            content='{"approved": true',
+        )
+        truncated_review.finish_reason = "length"
+
+        manager = SimpleNamespace()
+        manager.execute = AsyncMock(
+            side_effect=[
+                make_result(
+                    agent="chapter",
+                    content="Draft.",
+                ),
+                truncated_review,
+                make_result(
+                    agent="review",
+                    content=review_json(
+                        approved=True
+                    ),
+                ),
+            ]
+        )
+
+        result = await ChapterWorkflow(
+            manager
+        ).run(
+            self._request(
+                review_retry_attempts=1,
+                review_reasoning_effort=(
+                    "medium"
+                ),
+                review_retry_reasoning_effort=(
+                    "none"
+                ),
+                review_max_tokens=900,
+            )
+        )
+
+        self.assertEqual(
+            result.status,
+            "completed",
+        )
+        self.assertTrue(
+            result.quality_gate_passed
+        )
+        self.assertEqual(
+            manager.execute.await_count,
+            3,
+        )
+        self.assertTrue(
+            result.workflow_steps[1]
+            .metadata[
+                "review_output_truncated"
+            ]
+        )
+        self.assertFalse(
+            result.workflow_steps[2]
+            .metadata[
+                "review_output_truncated"
+            ]
+        )
+
+        retry_context = (
+            manager.execute
+            .await_args_list[2]
+            .kwargs["context"]
+        )
+        self.assertEqual(
+            retry_context.reasoning_effort,
+            "none",
+        )
+        self.assertGreaterEqual(
+            retry_context.max_tokens,
+            1200,
+        )
+
     async def test_first_review_parse_failure_is_safe(
         self,
     ) -> None:

@@ -128,13 +128,26 @@ class NovelAgent(BaseAgent):
                     )
                 )
 
+        authoritative_messages = [
+            message
+            for message in context.messages
+            if message.metadata.get("source")
+            == "chapter_plan_grounding"
+        ]
+        messages.extend(authoritative_messages)
+
         if context.use_memory:
 
             memory_context = (
                 await memory_context_builder.build(
                     user_id=context.user_id,
                     novel_id=context.novel_id,
-                    query=context.instruction,
+                    query=str(
+                        context.metadata.get(
+                            "memory_query",
+                            context.instruction,
+                        )
+                    ),
                     top_k=4,
                 )
             )
@@ -152,7 +165,10 @@ class NovelAgent(BaseAgent):
                 )
 
         messages.extend(
-            context.messages
+            message
+            for message in context.messages
+            if message.metadata.get("source")
+            != "chapter_plan_grounding"
         )
 
         messages.append(
