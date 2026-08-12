@@ -2512,3 +2512,66 @@ expired Session dry-run/execute each selected exactly one ID
 session close evicted only the selected session
 final scope contains no Session and preserves one Long-term row
 ```
+
+## v0.15.0-alpha.24 — Sprint 08C.2 External Knowledge Base
+
+NovelForge 新增与小说内部 Memory/Canon 分离的外部知识库：
+
+```text
+external_knowledge.db
+  -> external_knowledge_sources
+  -> external_knowledge_revisions
+  -> external_knowledge_chunks
+
+vector_db/external_knowledge.index
+vector_db/external_knowledge_ids.json
+```
+
+核心边界：
+
+- 外部知识不进入 `memory.db`、Canon、Story Bible 或已接受正文。
+- Source 使用稳定 UUID；`source_uri` 在 `(user_id, knowledge_base_id)` 内唯一。
+- 内容变更形成 append-only revision，并通过 `expected_revision` 乐观并发；冲突返回 HTTP 409。
+- 当前 revision 按 1000 字符、120 字符 overlap 确定性切块；chunk 保存字符坐标和内容 hash。
+- SQLite 是权威源，独立 FAISS namespace 负责语义召回；启动时检查并修复 missing/orphan vectors。
+- 读取和检索都强制 `user_id + knowledge_base_id` scope，跨作用域 GET 返回 404，检索返回空集。
+- Citation 格式为 `EK:<source_id>:r<revision>:c<chunk>`，同时包含 URI、标题、来源类型和字符坐标。
+- Novel Agent/Chat 仅在显式给出 `external_knowledge_base_ids` 时加载 P6 External Knowledge。
+- 外部证据中的命令只视为数据；不能覆盖 P0-P5 权威上下文，也不触发自动 Memory 抽取。
+- 返回边界只保留本轮检索上下文中的 citation；同源缩写会规范成完整 revision/chunk 引用，漏引会补入最高相关证据。
+
+新增 API：
+
+```text
+POST   /api/v1/external-knowledge/sources
+GET    /api/v1/external-knowledge/sources
+GET    /api/v1/external-knowledge/sources/{source_id}
+PUT    /api/v1/external-knowledge/sources/{source_id}
+DELETE /api/v1/external-knowledge/sources/{source_id}
+GET    /api/v1/external-knowledge/sources/{source_id}/revisions
+POST   /api/v1/external-knowledge/retrieve
+```
+
+自动化验证：
+
+```text
+16/16 External Knowledge focused tests passed
+359/359 full regression passed after final citation hardening
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实本地 Qwen 验收：
+
+```text
+source_id = 73622379-3a96-4abe-b260-aecc044b70c3
+create revision 1 returned 201 and indexed=true
+cross-user GET returned 404; cross-user retrieval returned zero hits
+update advanced revision 1 -> 2; stale update returned HTTP 409
+retrieval citation advanced from r1:c1 to r2:c1
+backend restart preserved source revision 2 and independent FAISS retrieval
+qwen3:8b answered 74 degrees with the complete r2:c1 citation
+embedded instruction requesting 999 degrees was not executed
+Chat marked memory_extraction_skipped=true; acceptance Memory count stayed 0
+```

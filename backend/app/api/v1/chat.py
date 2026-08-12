@@ -9,6 +9,10 @@ from app.llm.schemas import (
 
 from app.memory.context import memory_context_builder
 from app.memory.extractor import memory_extractor
+from app.knowledge.context import (
+    enforce_external_knowledge_citations,
+    external_knowledge_context_builder,
+)
 
 
 router = APIRouter()
@@ -85,11 +89,76 @@ async def chat(
             ),
         )
 
+    knowledge_base_ids = metadata.get(
+        "external_knowledge_base_ids",
+        [],
+    )
+    external_context = ""
+    if isinstance(knowledge_base_ids, list) and knowledge_base_ids and query:
+        external_context = await external_knowledge_context_builder.build(
+            user_id=str(user_id),
+            knowledge_base_ids=[str(item) for item in knowledge_base_ids],
+            query=str(
+                metadata.get("external_knowledge_query", query)
+            ),
+            top_k=4,
+        )
+        if external_context:
+            request.messages.insert(
+                1 if memory_context else 0,
+                ChatMessage(
+                    role="system",
+                    content=external_context,
+                    metadata={
+                        "source": "external_knowledge",
+                        "priority": "P6",
+                        "citation_required": True,
+                        "knowledge_base_ids": knowledge_base_ids,
+                    },
+                ),
+            )
+
     # 调用当前选择的模型
     result = await llm_manager.chat(
         request.provider,
         request,
     )
+
+    if external_context:
+        if isinstance(result, dict):
+            raw_content = str(result.get("content", "") or "")
+        else:
+            raw_content = str(getattr(result, "content", "") or "")
+        normalized_content, external_citations = (
+            enforce_external_knowledge_citations(
+                raw_content,
+                external_context,
+            )
+        )
+
+        external_metadata = {
+            "external_knowledge_used": True,
+            "external_knowledge_priority": "P6",
+            "external_knowledge_citations": external_citations,
+            "memory_extraction_skipped": True,
+            "memory_extraction_skip_reason": (
+                "external_knowledge_isolation"
+            ),
+        }
+        if isinstance(result, dict):
+            result["content"] = normalized_content
+            result_metadata = result.get("metadata")
+            if not isinstance(result_metadata, dict):
+                result_metadata = {}
+                result["metadata"] = result_metadata
+            result_metadata.update(external_metadata)
+        else:
+            result.content = normalized_content
+            result_metadata = getattr(result, "metadata", None)
+            if not isinstance(result_metadata, dict):
+                result_metadata = {}
+                result.metadata = result_metadata
+            result_metadata.update(external_metadata)
 
     # 提取模型回答
     answer = ""
@@ -106,7 +175,7 @@ async def chat(
         answer = result.content or ""
 
     # 后台执行记忆提取，不阻塞聊天接口返回
-    if query:
+    if query and not external_context:
 
         background_tasks.add_task(
             memory_extractor.extract,

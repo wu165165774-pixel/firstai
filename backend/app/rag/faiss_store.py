@@ -27,6 +27,7 @@ class PersistentFaissStore:
         self,
         index_dir: str | None = None,
         dimension: int | None = None,
+        index_name: str = "memory",
     ) -> None:
 
         self.index_dir = Path(
@@ -54,14 +55,31 @@ class PersistentFaissStore:
                 "FAISS dimension must be greater than zero."
             )
 
+        normalized_index_name = str(index_name or "").strip()
+
+        if (
+            not normalized_index_name
+            or not normalized_index_name
+            .replace("_", "")
+            .replace("-", "")
+            .isalnum()
+        ):
+
+            raise ValueError(
+                "FAISS index_name must contain only letters, numbers, "
+                "underscores, or hyphens."
+            )
+
+        self.index_name = normalized_index_name
+
         self.index_path = (
             self.index_dir
-            / "memory.index"
+            / f"{self.index_name}.index"
         )
 
         self.mapping_path = (
             self.index_dir
-            / "memory_ids.json"
+            / f"{self.index_name}_ids.json"
         )
 
         self._lock = threading.RLock()
@@ -190,12 +208,12 @@ class PersistentFaissStore:
 
         temp_index_path = (
             self.index_dir
-            / "memory.index.tmp"
+            / f"{self.index_name}.index.tmp"
         )
 
         temp_mapping_path = (
             self.index_dir
-            / "memory_ids.json.tmp"
+            / f"{self.index_name}_ids.json.tmp"
         )
 
         faiss.write_index(
@@ -401,6 +419,54 @@ class PersistentFaissStore:
             self._save_locked()
 
             return vector_id
+
+    def upsert_many(
+        self,
+        memory_ids: list[str],
+        vectors: np.ndarray,
+    ) -> int:
+        """Upsert a batch and persist the FAISS files only once."""
+
+        normalized_ids = [str(item).strip() for item in memory_ids]
+        if any(not item for item in normalized_ids):
+            raise ValueError("Memory ID must not be empty.")
+        if len(set(normalized_ids)) != len(normalized_ids):
+            raise ValueError("Memory IDs in an upsert batch must be unique.")
+        if not normalized_ids:
+            return 0
+
+        raw_vectors = np.asarray(vectors, dtype=np.float32)
+        if raw_vectors.ndim != 2:
+            raise ValueError("Upsert vectors must be a 2D matrix.")
+        if raw_vectors.shape[0] != len(normalized_ids):
+            raise ValueError("Memory ID count does not match vector count.")
+
+        prepared = np.vstack(
+            [
+                self._prepare_vector(vector)[0]
+                for vector in raw_vectors
+            ]
+        )
+
+        with self._lock:
+            vector_ids: list[int] = []
+            for memory_id in normalized_ids:
+                existing_id = self._find_vector_id_locked(memory_id)
+                vector_id = self._allocate_vector_id_locked(memory_id)
+                if existing_id is not None:
+                    self._index.remove_ids(
+                        np.asarray([existing_id], dtype=np.int64)
+                    )
+                self._id_to_memory[str(vector_id)] = memory_id
+                vector_ids.append(vector_id)
+
+            self._index.add_with_ids(
+                np.ascontiguousarray(prepared, dtype=np.float32),
+                np.asarray(vector_ids, dtype=np.int64),
+            )
+            self._save_locked()
+
+        return len(normalized_ids)
 
     def remove(
         self,
@@ -667,6 +733,7 @@ class PersistentFaissStore:
                     self._index.ntotal
                 ),
                 "dimension": self.dimension,
+                "index_name": self.index_name,
                 "index_path": str(
                     self.index_path
                 ),

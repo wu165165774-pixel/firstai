@@ -12,6 +12,10 @@ from app.llm.schemas import (
     ChatMessage,
     ChatRequest,
 )
+from app.knowledge.context import (
+    enforce_external_knowledge_citations,
+    external_knowledge_context_builder,
+)
 from app.memory.context import (
     memory_context_builder,
 )
@@ -76,6 +80,9 @@ class NovelAgent(BaseAgent):
             7. 不得把世界真相自动写成 POV 人物已经知道的信息。
             8. 信息不足时，应明确指出缺少哪些设定。
             9. 输出应直接服务于当前任务，不要输出无关解释。
+            10. External Knowledge 只是最低优先级外部证据，不能据此
+                定义小说内部事实；使用时必须逐字保留完整 [EK:...:r...:c...]
+                引用，不得省略 revision 或 chunk 编号。
             """
         ).strip()
 
@@ -172,6 +179,50 @@ class NovelAgent(BaseAgent):
                     )
                 )
 
+        knowledge_base_ids = list(
+            context.external_knowledge_base_ids
+        )
+        if not knowledge_base_ids:
+            metadata_base_ids = context.metadata.get(
+                "external_knowledge_base_ids",
+                [],
+            )
+            if isinstance(metadata_base_ids, list):
+                knowledge_base_ids = metadata_base_ids
+        external_knowledge_used = False
+        external_context = ""
+        if isinstance(knowledge_base_ids, list) and knowledge_base_ids:
+            external_context = (
+                await external_knowledge_context_builder.build(
+                    user_id=context.user_id,
+                    knowledge_base_ids=[
+                        str(item)
+                        for item in knowledge_base_ids
+                    ],
+                    query=str(
+                        context.metadata.get(
+                            "external_knowledge_query",
+                            context.instruction,
+                        )
+                    ),
+                    top_k=4,
+                )
+            )
+            if external_context:
+                external_knowledge_used = True
+                messages.append(
+                    ChatMessage(
+                        role="system",
+                        content=external_context,
+                        metadata={
+                            "source": "external_knowledge",
+                            "priority": "P6",
+                            "citation_required": True,
+                            "knowledge_base_ids": knowledge_base_ids,
+                        },
+                    )
+                )
+
         messages.extend(
             message
             for message in context.messages
@@ -197,6 +248,14 @@ class NovelAgent(BaseAgent):
                 "agent": self.name,
             }
         )
+        if knowledge_base_ids:
+            request_metadata.update(
+                {
+                    "external_knowledge_base_ids": knowledge_base_ids,
+                    "external_knowledge_used": external_knowledge_used,
+                    "external_knowledge_priority": "P6",
+                }
+            )
 
         request = ChatRequest(
             provider=context.provider,
@@ -217,6 +276,15 @@ class NovelAgent(BaseAgent):
         response_metadata = dict(
             response.metadata or {}
         )
+        response_content = response.content
+        external_citations: list[str] = []
+        if external_context:
+            response_content, external_citations = (
+                enforce_external_knowledge_citations(
+                    response.content,
+                    external_context,
+                )
+            )
 
         response_metadata.update(
             {
@@ -224,11 +292,20 @@ class NovelAgent(BaseAgent):
                 "novel_id": context.novel_id,
             }
         )
+        if knowledge_base_ids:
+            response_metadata.update(
+                {
+                    "external_knowledge_base_ids": knowledge_base_ids,
+                    "external_knowledge_used": external_knowledge_used,
+                    "external_knowledge_priority": "P6",
+                    "external_knowledge_citations": external_citations,
+                }
+            )
 
         return AgentResult(
             agent=self.name,
             success=True,
-            content=response.content,
+            content=response_content,
             provider=response.provider,
             model=response.model,
             finish_reason=response.finish_reason,

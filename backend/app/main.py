@@ -8,6 +8,7 @@ from loguru import logger
 from app.api.health import router as health_router
 from app.api.v1.agents import router as agent_router
 from app.api.v1.chat import router as chat_router
+from app.api.v1.external_knowledge import router as external_knowledge_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.providers import router as provider_router
 from app.api.v1.workflows import router as workflow_router
@@ -16,6 +17,7 @@ from app.core.exception_handler import novelforge_exception_handler
 from app.core.exceptions import NovelForgeException
 from app.core.middleware import RequestLogMiddleware
 from app.rag.consistency import memory_index_consistency_service
+from app.knowledge.manager import external_knowledge_manager
 
 
 @asynccontextmanager
@@ -46,12 +48,27 @@ async def lifespan(app: FastAPI):
             "Backend will continue using SQLite."
         )
 
+    try:
+        result = await external_knowledge_manager.check_and_repair_index()
+        logger.info(
+            "External knowledge index startup check complete: "
+            f"sqlite_count={result.sqlite_count}, "
+            f"faiss_count={result.faiss_count_after}, "
+            f"rebuilt={result.rebuilt}, "
+            f"consistent={result.consistent}"
+        )
+    except Exception:
+        logger.exception(
+            "Unexpected external knowledge index startup check failure. "
+            "Backend will continue using authoritative SQLite data."
+        )
+
     yield
 
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.23",
+    version="0.15.0-alpha.24",
     lifespan=lifespan,
 )
 
@@ -84,6 +101,12 @@ app.include_router(
     memory_router,
     prefix="/api/v1",
     tags=["Memory"],
+)
+
+app.include_router(
+    external_knowledge_router,
+    prefix="/api/v1",
+    tags=["External Knowledge"],
 )
 
 app.include_router(

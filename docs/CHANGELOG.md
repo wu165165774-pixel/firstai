@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.24
+
+- Added a physically isolated External Knowledge SQLite database and FAISS namespace.
+- Added scoped source CRUD, immutable revisions, deterministic chunks, optimistic concurrency, and startup index repair.
+- Added traceable `EK:<source>:r<revision>:c<chunk>` citations with response-boundary normalization.
+- Added opt-in P6 External Knowledge context for Novel Agent and Chat without contaminating novel Memory.
+- Added real local Qwen Embedding/Qwen Agent acceptance for scope isolation, prompt-injection resistance, citations, and restart persistence.
+
 ## v0.15.0-alpha.23
 
 - Added independent Session, Working, and Long-term lifecycle tiers without changing content-type taxonomy.

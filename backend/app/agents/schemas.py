@@ -9,6 +9,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    field_validator,
 )
 
 from app.llm.schemas import (
@@ -58,6 +59,11 @@ class AgentContext(BaseModel):
 
     use_canon: bool = True
 
+    external_knowledge_base_ids: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+
     task_mode: AgentTaskMode = "auto"
 
     reasoning_effort: ReasoningEffort = "none"
@@ -76,6 +82,27 @@ class AgentContext(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict
     )
+
+    @field_validator("external_knowledge_base_ids")
+    @classmethod
+    def normalize_external_knowledge_base_ids(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            item = str(item or "").strip()
+            if not item:
+                raise ValueError(
+                    "external_knowledge_base_ids must not contain blanks."
+                )
+            if len(item) > 128:
+                raise ValueError(
+                    "external knowledge base ID exceeds 128 characters."
+                )
+            if item not in normalized:
+                normalized.append(item)
+        return normalized
 
 
 class AgentResult(BaseModel):
