@@ -2710,3 +2710,66 @@ wrong-user retrieval returned zero evidence
 ```
 
 验收记录保存在 `data/sprint08d1_acceptance.json`；既有数据库与验收数据未删除。下一项为 Sprint 08D.2 Consistency Engine。
+
+## v0.15.0-alpha.27 — Sprint 08D.2 Consistency Engine
+
+NovelForge 在 Temporal Graph 之上增加 candidate-only 的一致性分析与 Chapter Workflow 硬门禁：
+
+```text
+Project / Bible / Canon / current Graph
+                 │
+                 v
+       bounded P0.4 constraints
+                 │
+                 v
+Draft -> Review fact candidates -> deterministic conflicts
+                 │                         │
+                 └──── Rewrite <───────────┘
+                           │
+                           v
+                       Re-review
+```
+
+写作前约束：
+
+- Project constraints、Story Bible rules、Canonical Entity 和指定章节有效的 Temporal Event/Relation 统一为带精确来源 revision 的结构化约束。
+- 约束使用确定性 severity/category/ID 排序与字符预算；完整 API 默认 3600 字符，Workflow P0.4 最多 1400 字符。
+- Workflow 已由 P0 Canon Context 提供身份信息，因此 P0.4 文本过滤重复 identity，但结果仍保留完整 constraint 列表。
+- Novel Agent 将 Chapter Plan Grounding 与 Consistency Constraints 作为权威 system messages，顺序高于 Session/Working/Long-term Memory 和双路 RAG。
+
+写作后检查：
+
+- 候选事实覆盖 relationship、life_state、location、identity 与 event。
+- 知识范围统一为 WORLD_TRUTH、CHARACTER_KNOWLEDGE、CHARACTER_BELIEF、READER_KNOWLEDGE。
+- 确定性规则检查 unknown/ambiguous entity、ID/name mismatch、relationship、life state、location、timeline、unsupported evidence 与 knowledge scope。
+- alias 歧义不会猜测；关系同义词使用受控词表；对称盟友/敌对关系检查反向边。
+- transition 必须同时具有明确 evidence，不能仅靠模型标签绕过冲突门禁。
+- Qwen 抽取和 grounded Review 的章节号强制绑定请求/Chapter Plan；外部 `/check` 提交错误坐标仍返回 `timeline_conflict`。
+
+API：
+
+```text
+POST /api/v1/novels/{novel_id}/consistency/constraints
+POST /api/v1/novels/{novel_id}/consistency/check
+POST /api/v1/novels/{novel_id}/consistency/analyze
+```
+
+`/analyze` 默认使用本地 `qwen3:8b` medium reasoning 抽取候选事实，再交给确定性检查器。三个端点均执行 user/novel scope 门禁，并保持 `persisted=false`。一致性实现没有 Graph/Memory/Vector/Canon/Manuscript 写路径；事实接受与回写留给 08D.3。
+
+Workflow Review 输出新增 `candidate_facts`。确认的 blocking conflict 会强制审核失败、生成一致性 Review issue 并携带完整冲突数据进入 Rewrite；下一次 Review 对修订正文重新抽取和检查。结果暴露 constraints、当前 conflicts、逐轮 conflict history、上下文字符数和 `consistency_fact_persisted=false`。
+
+自动化验证：
+
+```text
+16/16 Consistency Engine focused tests passed
+25/25 Chapter Workflow focused tests passed
+15/15 Workflow Grounding focused tests passed
+408/408 full regression passed in 103.532s
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实运行态验收复用并保留 08D.1 小说 `6bb1eaa5-d175-4a93-892e-3ec7271ddd95`。第 3 章当前 Graph 记录岚与祁为盟友；输入“岚对祁拔剑，宣称两人一直是敌人”后，在线确定性 API 与修复后的真实 `qwen3:8b` 抽取路径均返回 blocking `relationship_conflict`。真实调用 token 为 258/440/698，章节固定为 3，`persisted=false`；调用前后 Temporal Graph revision 行数保持 Event 2、Relation 2。
+
+验收记录保存在 `data/sprint08d2_acceptance.json`；既有数据库与验收数据未删除。下一项为 Sprint 08D.3 accepted Manuscript 后的原子、幂等事实回写。

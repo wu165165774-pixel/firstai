@@ -13,6 +13,11 @@ from pydantic import (
 )
 
 from app.llm.schemas import ReasoningEffort
+from app.consistency.schemas import (
+    ConsistencyConflict,
+    ConsistencyConstraint,
+    ConsistencyFactCandidate,
+)
 
 
 ReviewSeverity = Literal[
@@ -134,6 +139,11 @@ class ReviewReport(BaseModel):
 
     issues: list[ReviewIssue] = Field(
         default_factory=list
+    )
+
+    candidate_facts: list[ConsistencyFactCandidate] = Field(
+        default_factory=list,
+        max_length=200,
     )
 
     scores_inferred: bool = False
@@ -464,6 +474,18 @@ class ChapterWorkflowResult(BaseModel):
     review_raw: str = ""
 
     review_raw_history: list[str] = Field(
+        default_factory=list
+    )
+
+    consistency_constraints: list[ConsistencyConstraint] = Field(
+        default_factory=list
+    )
+
+    consistency_conflicts: list[ConsistencyConflict] = Field(
+        default_factory=list
+    )
+
+    consistency_conflict_history: list[list[ConsistencyConflict]] = Field(
         default_factory=list
     )
 

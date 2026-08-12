@@ -8,6 +8,7 @@ from loguru import logger
 from app.api.health import router as health_router
 from app.api.v1.agents import router as agent_router
 from app.api.v1.chat import router as chat_router
+from app.api.v1.consistency import router as consistency_router
 from app.api.v1.external_knowledge import router as external_knowledge_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.retrieval import router as retrieval_router
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.26",
+    version="0.15.0-alpha.27",
     lifespan=lifespan,
 )
 
@@ -115,6 +116,12 @@ app.include_router(
     temporal_graph_router,
     prefix="/api/v1",
     tags=["Temporal Graph"],
+)
+
+app.include_router(
+    consistency_router,
+    prefix="/api/v1",
+    tags=["Consistency"],
 )
 
 app.include_router(

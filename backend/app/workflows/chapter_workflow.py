@@ -14,6 +14,13 @@ from pydantic import ValidationError
 
 from app.agents.manager import AgentManager
 from app.agents.schemas import AgentContext
+from app.consistency.schemas import (
+    ConsistencyCheckRequest,
+    ConsistencyConflict,
+    ConsistencyConstraint,
+    ConsistencyConstraintRequest,
+)
+from app.consistency.service import ConsistencyEngine
 from app.llm.schemas import ChatMessage
 from app.workflows.grounding import (
     ChapterWorkflowGrounding,
@@ -27,6 +34,7 @@ from app.workflows.quality import (
 from app.workflows.schemas import (
     ChapterWorkflowRequest,
     ChapterWorkflowResult,
+    ReviewIssue,
     ReviewReport,
     ReviewScores,
     RevisionDiffSummary,
@@ -62,12 +70,16 @@ class ChapterWorkflow:
         self,
         agent_manager: AgentManager,
         grounding_service: ChapterWorkflowGroundingService | None = None,
+        consistency_service: ConsistencyEngine | None = None,
     ) -> None:
 
         self._agent_manager = agent_manager
         self._grounding_service = (
             grounding_service
             or chapter_workflow_grounding_service
+        )
+        self._consistency_service = consistency_service or ConsistencyEngine(
+            novel_service=self._grounding_service.novel_service,
         )
 
     @staticmethod
@@ -610,6 +622,7 @@ class ChapterWorkflow:
     def _parse_review(
         cls,
         content: str,
+        chapter_number: int | None = None,
     ) -> ReviewReport:
 
         try:
@@ -624,6 +637,24 @@ class ChapterWorkflow:
                     payload
                 )
             )
+
+            candidate_facts = normalized.get(
+                "candidate_facts"
+            )
+            if (
+                chapter_number is not None
+                and isinstance(
+                    candidate_facts,
+                    list,
+                )
+            ):
+                for candidate in candidate_facts:
+                    if isinstance(candidate, dict):
+                        # Chapter Plan grounding owns this coordinate;
+                        # Review output cannot change it.
+                        candidate["chapter_number"] = (
+                            chapter_number
+                        )
 
             return ReviewReport.model_validate(
                 normalized
@@ -661,6 +692,7 @@ class ChapterWorkflow:
             TrackedIssue
         ],
         request: ChapterWorkflowRequest,
+        chapter_number: int | None = None,
     ) -> str:
 
         unresolved_json = (
@@ -703,6 +735,24 @@ class ChapterWorkflow:
             '      "impact": "why this matters",\n'
             '      "recommendation": "safe correction"\n'
             "    }\n"
+            "  ],\n"
+            '  "candidate_facts": [\n'
+            "    {\n"
+            '      "fact_id": "FACT-001",\n'
+            '      "fact_type": "relationship|life_state|location|identity|event",\n'
+            '      "subject_entity_id": "canonical ID or null",\n'
+            '      "subject_name": "name or null",\n'
+            '      "predicate": "relationship predicate or empty",\n'
+            '      "object_entity_id": "canonical ID or null",\n'
+            '      "object_name": "name or null",\n'
+            '      "value": "state/identity/event value or empty",\n'
+            '      "evidence": "exact short excerpt from chapter",\n'
+            f'      "chapter_number": {chapter_number or 1},\n'
+            '      "change_type": "assertion|transition",\n'
+            '      "confidence": 1.0,\n'
+            '      "knowledge_scope": "WORLD_TRUTH|CHARACTER_KNOWLEDGE|CHARACTER_BELIEF|READER_KNOWLEDGE",\n'
+            '      "knowledge_holder_entity_id": "canonical ID or null"\n'
+            "    }\n"
             "  ]\n"
             "}\n\n"
             "Set approved to false when the chapter "
@@ -719,7 +769,7 @@ class ChapterWorkflow:
             "require_all_issues_resolved="
             f"{request.require_all_issues_resolved}\n"
             "QUALITY_THRESHOLDS_END\n\n"
-            "PREVIOUS_UNRESOLVED_ISSUES\n"
+            + "PREVIOUS_UNRESOLVED_ISSUES\n"
             + unresolved_json
             + "\nPREVIOUS_UNRESOLVED_ISSUES_END\n\n"
             f"This is review round {round_index}.\n\n"
@@ -738,6 +788,7 @@ class ChapterWorkflow:
         ],
         round_index: int,
         request: ChapterWorkflowRequest,
+        consistency_conflicts: list[ConsistencyConflict] | None = None,
     ) -> str:
 
         score_json = json.dumps(
@@ -750,6 +801,15 @@ class ChapterWorkflow:
             cls._tracked_issues_json(
                 unresolved_issues
             )
+        )
+
+        conflict_json = json.dumps(
+            [
+                item.model_dump(mode="json")
+                for item in (consistency_conflicts or [])
+            ],
+            ensure_ascii=False,
+            indent=2,
         )
 
         return (
@@ -787,6 +847,9 @@ class ChapterWorkflow:
             "UNRESOLVED_ISSUES\n"
             + unresolved_json
             + "\nUNRESOLVED_ISSUES_END\n\n"
+            "DETERMINISTIC_CONSISTENCY_CONFLICTS\n"
+            + conflict_json
+            + "\nDETERMINISTIC_CONSISTENCY_CONFLICTS_END\n\n"
             "DRAFT_BEGIN\n"
             + content
             + "\nDRAFT_END"
@@ -872,6 +935,65 @@ class ChapterWorkflow:
             )
         )
 
+    def _apply_consistency_review(
+        self,
+        *,
+        request: ChapterWorkflowRequest,
+        grounding: ChapterWorkflowGrounding | None,
+        content: str,
+        report: ReviewReport,
+        conflict_history: list[list[ConsistencyConflict]],
+    ) -> ReviewReport:
+        if grounding is None:
+            return report
+
+        checked = self._consistency_service.check(
+            request.novel_id,
+            ConsistencyCheckRequest(
+                user_id=request.user_id,
+                chapter_number=int(grounding.metadata["chapter_number"]),
+                active_entity_ids=list(
+                    grounding.metadata.get("active_entity_ids", [])
+                ),
+                pov_character_id=grounding.metadata.get("pov_character_id"),
+                content=content,
+                candidate_facts=report.candidate_facts,
+            ),
+        )
+        conflicts = list(checked.conflicts)
+        conflict_history.append(conflicts)
+        existing_issue_keys = {
+            (item.category, item.evidence)
+            for item in report.issues
+        }
+        for conflict in conflicts:
+            if not conflict.blocking or conflict.status != "confirmed":
+                continue
+            issue_key = ("consistency", conflict.conflict_id)
+            if issue_key in existing_issue_keys:
+                continue
+            report.issues.append(
+                ReviewIssue(
+                    issue_id="",
+                    severity=conflict.severity,
+                    category="consistency",
+                    issue=conflict.message,
+                    evidence=conflict.conflict_id,
+                    impact=(
+                        "The generated chapter contradicts authoritative "
+                        "identity or temporal state."
+                    ),
+                    recommendation=conflict.recommendation,
+                )
+            )
+            existing_issue_keys.add(issue_key)
+        if any(
+            item.blocking and item.status == "confirmed"
+            for item in conflicts
+        ):
+            report.approved = False
+        return report
+
     @staticmethod
     def _context(
         request: ChapterWorkflowRequest,
@@ -884,6 +1006,7 @@ class ChapterWorkflow:
         temperature: float,
         max_tokens: int,
         attempt_index: int = 1,
+        consistency_context: str = "",
     ) -> AgentContext:
 
         metadata = dict(
@@ -915,6 +1038,18 @@ class ChapterWorkflow:
                     metadata={
                         "source": "chapter_plan_grounding",
                         "priority": "P0.3",
+                    },
+                )
+            )
+
+        if consistency_context:
+            messages.append(
+                ChatMessage(
+                    role="system",
+                    content=consistency_context,
+                    metadata={
+                        "source": "consistency_constraints",
+                        "priority": "P0.4",
                     },
                 )
             )
@@ -953,6 +1088,7 @@ class ChapterWorkflow:
         unresolved_issues: list[
             TrackedIssue
         ],
+        consistency_context: str = "",
     ) -> tuple[
         list[WorkflowStep],
         WorkflowStep | None,
@@ -1011,6 +1147,11 @@ class ChapterWorkflow:
                                     review_round,
                                     unresolved_issues,
                                     request,
+                                    (
+                                        int(grounding.metadata["chapter_number"])
+                                        if grounding is not None
+                                        else None
+                                    ),
                                 )
                             ),
                             stage="review",
@@ -1028,6 +1169,7 @@ class ChapterWorkflow:
                             attempt_index=(
                                 attempt_index
                             ),
+                            consistency_context=consistency_context,
                         ),
                     )
                 )
@@ -1124,6 +1266,8 @@ class ChapterWorkflow:
             RevisionDiffSummary
         ],
         quality_gate_reasons: list[str],
+        consistency_constraints: list[ConsistencyConstraint] | None = None,
+        consistency_conflict_history: list[list[ConsistencyConflict]] | None = None,
     ) -> ChapterWorkflowResult:
 
         latest_review = (
@@ -1151,6 +1295,16 @@ class ChapterWorkflow:
             review_raw_history=(
                 review_raw_history
             ),
+            consistency_constraints=list(consistency_constraints or []),
+            consistency_conflicts=(
+                list(consistency_conflict_history[-1])
+                if consistency_conflict_history
+                else []
+            ),
+            consistency_conflict_history=[
+                list(items)
+                for items in (consistency_conflict_history or [])
+            ],
             quality_scores=(
                 latest_review.scores
                 if latest_review
@@ -1200,6 +1354,34 @@ class ChapterWorkflow:
             else None
         )
 
+        consistency_constraints: list[ConsistencyConstraint] = []
+        consistency_context = ""
+        consistency_conflict_history: list[list[ConsistencyConflict]] = []
+        if grounding is not None:
+            constraint_result = self._consistency_service.build_constraints(
+                request.novel_id,
+                ConsistencyConstraintRequest(
+                    user_id=request.user_id,
+                    chapter_number=int(grounding.metadata["chapter_number"]),
+                    active_entity_ids=list(
+                        grounding.metadata.get("active_entity_ids", [])
+                    ),
+                    pov_character_id=grounding.metadata.get(
+                        "pov_character_id"
+                    ),
+                    char_budget=1800,
+                ),
+            )
+            consistency_constraints = constraint_result.constraints
+            consistency_context = self._consistency_service.render_constraints(
+                [
+                    item
+                    for item in consistency_constraints
+                    if item.category != "identity"
+                ],
+                1400,
+            )
+
         steps: list[WorkflowStep] = []
         review_history: list[
             ReviewReport
@@ -1227,6 +1409,22 @@ class ChapterWorkflow:
                 else {}
             )
             result_metadata.update(metadata)
+            latest_conflicts = (
+                consistency_conflict_history[-1]
+                if consistency_conflict_history
+                else []
+            )
+            result_metadata.update(
+                {
+                    "consistency_mode": "deterministic_review_gate",
+                    "consistency_constraint_count": len(
+                        consistency_constraints
+                    ),
+                    "consistency_context_chars": len(consistency_context),
+                    "consistency_conflict_count": len(latest_conflicts),
+                    "consistency_fact_persisted": False,
+                }
+            )
 
             return self._result(
                 status=status,
@@ -1257,6 +1455,8 @@ class ChapterWorkflow:
                 quality_gate_reasons=(
                     quality_gate_reasons
                 ),
+                consistency_constraints=consistency_constraints,
+                consistency_conflict_history=consistency_conflict_history,
             )
 
         try:
@@ -1286,6 +1486,7 @@ class ChapterWorkflow:
                             request
                             .chapter_max_tokens
                         ),
+                        consistency_context=consistency_context,
                     ),
                 )
             )
@@ -1361,6 +1562,7 @@ class ChapterWorkflow:
                 current_content,
                 review_round,
                 previous_unresolved,
+                consistency_context,
             )
 
             steps.extend(
@@ -1403,7 +1605,16 @@ class ChapterWorkflow:
 
                 review_report = (
                     self._parse_review(
-                        review_raw
+                        review_raw,
+                        chapter_number=(
+                            int(
+                                grounding.metadata[
+                                    "chapter_number"
+                                ]
+                            )
+                            if grounding is not None
+                            else None
+                        ),
                     )
                 )
 
@@ -1431,6 +1642,16 @@ class ChapterWorkflow:
                         ),
                     },
                 )
+
+            review_report = (
+                self._apply_consistency_review(
+                    request=request,
+                    grounding=grounding,
+                    content=current_content,
+                    report=review_report,
+                    conflict_history=consistency_conflict_history,
+                )
+            )
 
             review_report = (
                 quality_tracker.apply_review(
@@ -1564,6 +1785,9 @@ class ChapterWorkflow:
                                     unresolved_issues,
                                     next_revision_round,
                                     request,
+                                    consistency_conflict_history[-1]
+                                    if consistency_conflict_history
+                                    else [],
                                 )
                             ),
                             stage="rewrite",
@@ -1582,6 +1806,7 @@ class ChapterWorkflow:
                                 request
                                 .rewrite_max_tokens
                             ),
+                            consistency_context=consistency_context,
                         ),
                     )
                 )

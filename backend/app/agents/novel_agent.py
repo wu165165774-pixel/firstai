@@ -135,11 +135,14 @@ class NovelAgent(BaseAgent):
                     )
                 )
 
+        authoritative_sources = {
+            "chapter_plan_grounding",
+            "consistency_constraints",
+        }
         authoritative_messages = [
             message
             for message in context.messages
-            if message.metadata.get("source")
-            == "chapter_plan_grounding"
+            if message.metadata.get("source") in authoritative_sources
         ]
         messages.extend(authoritative_messages)
 
@@ -275,8 +278,7 @@ class NovelAgent(BaseAgent):
         messages.extend(
             message
             for message in context.messages
-            if message.metadata.get("source")
-            != "chapter_plan_grounding"
+            if message.metadata.get("source") not in authoritative_sources
         )
 
         messages.append(

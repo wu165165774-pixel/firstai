@@ -141,15 +141,19 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - Active Scene Entities 驱动的 entity-aware retrieval。
 - Graph/Vector 结果融合、去重、冲突仲裁和 context budget。
 
-08D.1 以独立 `temporal_graph.db` 保存当前聚合和 append-only revision snapshot；实体身份仍由 `novel_entities` 唯一授权。Graph Provider 已接入 08C.3 双 lane，并消费 active entity 与 chapter 坐标。事实抽取、冲突仲裁和 accepted Manuscript 后的原子/幂等回写仍属于 08D.2/08D.3。
+08D.1 以独立 `temporal_graph.db` 保存当前聚合和 append-only revision snapshot；实体身份仍由 `novel_entities` 唯一授权。Graph Provider 已接入 08C.3 双 lane，并消费 active entity 与 chapter 坐标。08D.2 已增加候选事实抽取与确定性冲突仲裁；accepted Manuscript 后的原子/幂等回写仍属于 08D.3。
 
-### P2：Consistency Engine
+### P2：Consistency Engine（08D.2 已完成）
 
 - 统一冲突类型与 severity/evidence/expected/generated 结构。
 - 先做确定性的 alias、关系、生死、地点、身份检查。
 - 增加 WORLD_TRUTH、CHARACTER_KNOWLEDGE、CHARACTER_BELIEF、READER_KNOWLEDGE。
 - LLM 只解释和修复明确冲突，不独自决定 Canon。
 - accepted manuscript 后再幂等回写 Memory、Vector 和 Temporal Graph。
+
+08D.2 将 Project/Bible world rules、Canonical Entity 和指定章节有效的 Temporal Event/Relation 统一为带来源 revision 的 P0.4 约束。独立 API 与 Chapter Review 均可产生结构化候选事实，但冲突结论由确定性检查器给出；LLM 不能凭空新增 Canon，也不能仅把 `change_type` 标成 transition 绕过门禁。确认的阻断冲突进入 Rewrite，下一轮 Review 重新抽取并复检。
+
+本阶段保持 candidate-only：`persisted=false`，不写 Temporal Graph、Memory、Vector、Canon 或 Manuscript。模型抽取与 grounded Review 的章节号强制绑定请求/Chapter Plan 固定坐标；显式 `/check` 仍会对调用方提交的错误章节报告 `timeline_conflict`。事实接受、原子写入、幂等键和跨存储补偿仍归 08D.3。
 
 ## 9. 文件影响范围
 
@@ -183,4 +187,4 @@ backend/tests/test_planner_agent.py
 
 ## 10. 已识别技术债
 
-08C.1 已修复 `MemoryExtractor` 对同一抽取结果重复调用 `memory_manager.add_memory(...)` 的路径，并以独立回归测试证明每个事实只保存一次。08C.2 外部知识隔离、08C.3 Graph/Vector 双路融合和 08D.1 Temporal Graph 基础均已完成；当前技术债集中在确定性 Consistency Engine 与 accepted Manuscript 后的原子、幂等事实回写。
+08C.1 已修复 `MemoryExtractor` 重复保存路径；08C.2 外部知识隔离、08C.3 Graph/Vector 双路融合、08D.1 Temporal Graph 基础和 08D.2 Consistency Engine 均已完成。当前技术债集中在候选抽取召回率评估，以及 accepted Manuscript 后跨 Memory、Vector、Temporal Graph 的原子、幂等事实回写。

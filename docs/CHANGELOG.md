@@ -3,6 +3,15 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.27
+
+- Added bounded, provenance-preserving pre-writing constraints from Project, Story Bible, Canonical Entity Registry, and chapter-valid Temporal Graph state.
+- Added structured Qwen candidate-fact extraction plus deterministic identity, relationship, life-state, location, timeline, evidence, and knowledge-scope checks.
+- Added three candidate-only Consistency APIs with strict user/novel isolation and no Graph, Memory, Vector, Canon, or Manuscript writes.
+- Integrated deterministic consistency conflicts into Chapter Review, Rewrite, and Re-review so confirmed blocking conflicts cannot pass the quality gate.
+- Bound extractor and grounded Review chapter coordinates to the authoritative request/Chapter Plan coordinate.
+- Added real `qwen3:8b` conflict acceptance and 408-test regression coverage.
+
 ## v0.15.0-alpha.26
 
 - Added an independent SQLite Temporal Graph authority for events, relations, normalized participants, chapter-valid intervals, and immutable revision snapshots.

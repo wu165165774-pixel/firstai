@@ -1038,6 +1038,35 @@ class ChapterWorkflowTests(
             report.approved
         )
 
+    def test_grounded_chapter_overrides_review_fact_coordinate(
+        self,
+    ) -> None:
+
+        payload = json.loads(
+            review_json(approved=True)
+        )
+        payload["candidate_facts"] = [
+            {
+                "fact_id": "FACT-001",
+                "fact_type": "relationship",
+                "subject_name": "岚",
+                "predicate": "敌对",
+                "object_name": "祁",
+                "evidence": "岚和祁是敌人。",
+                "chapter_number": "wrong-coordinate",
+            }
+        ]
+
+        report = ChapterWorkflow._parse_review(
+            json.dumps(payload),
+            chapter_number=3,
+        )
+
+        self.assertEqual(
+            report.candidate_facts[0].chapter_number,
+            3,
+        )
+
     def test_missing_scores_are_inferred(
         self,
     ) -> None:

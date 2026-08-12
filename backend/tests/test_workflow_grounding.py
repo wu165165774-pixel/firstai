@@ -441,6 +441,67 @@ class WorkflowGroundedExecutionTests(
             sources.index("long_term_memory"),
         )
 
+    async def test_consistency_constraints_precede_memory_in_agent_prompt(
+        self,
+    ) -> None:
+        llm_manager = SimpleNamespace(
+            chat=AsyncMock(
+                return_value=ChatResponse(
+                    content="chapter",
+                    provider="qwen_local",
+                    model="qwen3:8b",
+                )
+            )
+        )
+        agent = NovelAgent(llm_manager)
+        context = AgentContext(
+            user_id="workflow-user",
+            novel_id=self.project.novel_id,
+            instruction="写正文",
+            messages=[
+                ChatMessage(
+                    role="system",
+                    content="[PLAN]",
+                    metadata={
+                        "source": "chapter_plan_grounding",
+                        "priority": "P0.3",
+                    },
+                ),
+                ChatMessage(
+                    role="system",
+                    content="[CONSISTENCY]",
+                    metadata={
+                        "source": "consistency_constraints",
+                        "priority": "P0.4",
+                    },
+                ),
+            ],
+        )
+
+        with patch(
+            "app.agents.novel_agent.canon_context_builder.build",
+            new=AsyncMock(return_value="[CANON]"),
+        ), patch(
+            "app.agents.novel_agent.memory_context_builder.build",
+            new=AsyncMock(return_value="[MEMORY]"),
+        ):
+            await agent.run(context)
+
+        request = llm_manager.chat.await_args.args[1]
+        sources = [
+            item.metadata.get("source")
+            for item in request.messages
+            if item.role == "system"
+        ]
+        self.assertLess(
+            sources.index("chapter_plan_grounding"),
+            sources.index("consistency_constraints"),
+        )
+        self.assertLess(
+            sources.index("consistency_constraints"),
+            sources.index("long_term_memory"),
+        )
+
     async def test_persisted_run_records_plan_binding_and_grounding(self) -> None:
         manager = SimpleNamespace(
             execute=AsyncMock(
