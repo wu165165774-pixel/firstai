@@ -3,6 +3,15 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.25
+
+- Added concurrent Vector/Graph retrieval lanes with independent timeout, failure isolation, and explicit degradation diagnostics.
+- Added deterministic reciprocal-rank fusion, normalized-content deduplication, provenance, `top_k`, and character-budget enforcement.
+- Reused Working/Long-term Hybrid Memory for the Vector lane while keeping Session Memory exact-scoped in SQLite.
+- Integrated fused retrieval diagnostics into Memory Context, Novel Agent, Chat, and grounded specialized Agents.
+- Kept Temporal Graph persistence out of Sprint 08C.3; the default Graph lane reports unavailable until Sprint 08D.1.
+- Added real local Qwen Embedding and `qwen3:8b` acceptance plus 370-test regression coverage.
+
 ## v0.15.0-alpha.24
 
 - Added a physically isolated External Knowledge SQLite database and FAISS namespace.

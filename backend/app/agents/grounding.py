@@ -3,12 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.memory.hybrid_retriever import (
-    hybrid_memory_retriever,
-)
 from app.memory.storage.sqlite import (
     SQLiteMemoryStorage,
 )
+from app.retrieval.schemas import DualRetrievalRequest
+from app.retrieval.service import dual_path_retriever
 
 
 @dataclass(frozen=True)
@@ -20,6 +19,16 @@ class GroundingMemory:
     memory_tier: str = "long_term"
     similarity: float | None = None
     hybrid_score: float | None = None
+    source_paths: tuple[str, ...] = ("vector",)
+    fusion_score: float | None = None
+
+
+@dataclass(frozen=True)
+class GroundingRetrieval:
+    memories: list[GroundingMemory]
+    mode: str
+    degraded: bool
+    lanes: list[dict[str, Any]]
 
 
 class AgentGroundingService:
@@ -139,6 +148,23 @@ class AgentGroundingService:
                     )
                 )
             ),
+            source_paths=tuple(
+                str(
+                    path.value
+                    if hasattr(path, "value")
+                    else path
+                )
+                for path in getattr(
+                    memory,
+                    "source_paths",
+                    ("vector",),
+                )
+            ),
+            fusion_score=(
+                self._optional_float(
+                    getattr(memory, "fusion_score", None)
+                )
+            ),
         )
 
     @staticmethod
@@ -176,6 +202,30 @@ class AgentGroundingService:
         min_similarity: float = 0.35,
     ) -> list[GroundingMemory]:
 
+        result = await self.retrieve_with_diagnostics(
+            user_id=user_id,
+            novel_id=novel_id,
+            query=query,
+            allowed_memory_types=allowed_memory_types,
+            top_k=top_k,
+            min_similarity=min_similarity,
+        )
+        return result.memories
+
+    async def retrieve_with_diagnostics(
+        self,
+        user_id: str,
+        novel_id: str,
+        query: str,
+        allowed_memory_types: (
+            set[str]
+            | frozenset[str]
+            | None
+        ) = None,
+        top_k: int = 6,
+        min_similarity: float = 0.35,
+    ) -> GroundingRetrieval:
+
         user_id = str(
             user_id or ""
         ).strip()
@@ -189,7 +239,12 @@ class AgentGroundingService:
         ).strip()
 
         if not user_id or not novel_id or not query:
-            return []
+            return GroundingRetrieval(
+                memories=[],
+                mode="unavailable",
+                degraded=True,
+                lanes=[],
+            )
 
         allowed_types = (
             self._normalize_allowed_types(
@@ -202,30 +257,69 @@ class AgentGroundingService:
             20,
         )
 
-        candidates = (
-            await hybrid_memory_retriever.retrieve(
+        retrieval = await dual_path_retriever.retrieve(
+            DualRetrievalRequest(
                 user_id=user_id,
                 novel_id=novel_id,
                 query=query,
                 top_k=min(
                     requested_top_k * 3,
-                    30,
+                    20,
                 ),
-                min_similarity=min_similarity,
+                min_vector_similarity=min_similarity,
+                allowed_memory_types=sorted(allowed_types or set()),
             )
         )
 
         results: list[GroundingMemory] = []
         seen: set[tuple[str, str]] = set()
 
-        for candidate in candidates:
+        for candidate in retrieval.evidence:
 
-            memory = self._convert_memory(
-                candidate
+            vector_source_id = next(
+                (
+                    source.source_id
+                    for source in candidate.sources
+                    if source.path.value == "vector"
+                ),
+                None,
             )
-
-            if memory is None:
-                continue
+            memory = GroundingMemory(
+                id=vector_source_id or candidate.evidence_id,
+                memory_type=candidate.evidence_type,
+                content=candidate.content,
+                memory_tier=str(
+                    next(
+                        (
+                            source.metadata.get("memory_tier")
+                            for source in candidate.sources
+                            if source.path.value == "vector"
+                            and source.metadata.get("memory_tier")
+                        ),
+                        "graph",
+                    )
+                ),
+                similarity=self._optional_float(
+                    next(
+                        (
+                            source.metadata.get("similarity")
+                            for source in candidate.sources
+                            if source.path.value == "vector"
+                        ),
+                        None,
+                    )
+                ),
+                hybrid_score=self._optional_float(
+                    max(
+                        (source.score for source in candidate.sources),
+                        default=0.0,
+                    )
+                ),
+                source_paths=tuple(
+                    path.value for path in candidate.source_paths
+                ),
+                fusion_score=candidate.fusion_score,
+            )
 
             if (
                 allowed_types is not None
@@ -248,7 +342,15 @@ class AgentGroundingService:
             if len(results) >= requested_top_k:
                 break
 
-        return results
+        return GroundingRetrieval(
+            memories=results,
+            mode=retrieval.mode,
+            degraded=retrieval.degraded,
+            lanes=[
+                lane.model_dump(mode="json")
+                for lane in retrieval.lanes
+            ],
+        )
 
     async def list_by_types(
         self,

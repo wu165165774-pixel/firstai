@@ -2575,3 +2575,71 @@ qwen3:8b answered 74 degrees with the complete r2:c1 citation
 embedded instruction requesting 999 degrees was not executed
 Chat marked memory_extraction_skipped=true; acceptance Memory count stayed 0
 ```
+
+## v0.15.0-alpha.25 — Sprint 08C.3 Dual-path Retrieval
+
+NovelForge 新增可插拔的 Vector/Graph 双路检索执行与确定性融合层：
+
+```text
+Vector Memory Provider ─┐
+                        ├─ concurrent lanes -> RRF -> dedup -> budget
+Temporal Graph Provider ┘                    -> provenance + diagnostics
+```
+
+核心边界：
+
+- Vector lane 复用现有 Hybrid Memory，只检索 Working/Long-term；Session Memory 继续由 SQLite 按 `session_id` 精确加载。
+- 两条 lane 使用 `asyncio` 并发执行，并分别应用超时；不可用、异常或超时只降级对应 lane。
+- 默认 Graph Provider 明确返回 `unavailable`，直到 08D.1 提供真正的 Temporal Graph 存储；本 Sprint 不新增 Graph/Planner 表，也不伪造 Graph 结果。
+- 融合使用 `RRF_K=60`，以 NFKC、空白归一化和 case-fold 后的 SHA-256 内容指纹去重。
+- 排序、来源顺序、`top_k` 和字符预算均为确定性；每条证据保留 path、source ID、rank、原始 score 与 metadata。
+- lane 错误对外只返回清理后的诊断，不泄露内部异常正文、路径或 secret。
+
+新增 API：
+
+```text
+POST /api/v1/retrieval/fused
+```
+
+请求支持 `top_k`、`char_budget`、Vector 相似度门槛、lane timeout、Memory 类型过滤，以及供未来 Graph Provider 使用的 active entity/time 坐标。响应返回 `dual/vector_only/graph_only/unavailable`、`degraded`、融合证据和两条 lane 诊断。
+
+接入行为：
+
+- Memory Context 保持 Session -> Working -> Long-term -> Temporal Graph 分区顺序，并携带检索诊断。
+- Novel Agent 与 Chat metadata 返回 `memory_retrieval_mode`、`memory_retrieval_degraded`、`memory_retrieval_lanes`。
+- 专业 Agent 的语义检索策略变为 `dual_path_fusion`，证据保留原 Vector memory ID、`source_paths` 和 `fusion_score`。
+- 类型枚举/冲突扫描仍走精确 SQLite 查询，不错误地包装成语义双路检索。
+
+自动化验证：
+
+```text
+13/13 Dual Retrieval focused tests passed
+23/23 Agent related tests passed
+23/23 Memory related tests passed
+14/14 Workflow Grounding tests passed
+373/373 full regression passed
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实运行态验收：
+
+```text
+scope user = sprint08c1-acceptance
+scope novel = memory-lifecycle-20260811
+memory_id = 0783f006-efba-424d-ba14-b245f7827ffb
+marker = 08C1-AMBER-20260811
+
+qwen3-embedding:0.6b Vector lane returned the exact Long-term memory
+Graph lane reported unavailable with no fabricated Graph evidence
+HTTP mode = vector_only, degraded = true
+backend restart preserved the same source memory ID and retrieval result
+online OpenAPI version after restart = 0.15.0-alpha.25
+grounded Plot Agent exposed provenance and both lane diagnostics
+qwen3:8b medium returned the correct memory-backed sentence
+prompt/completion/total tokens = 549/284/833
+finish_reason = stop
+```
+
+验收记录保存在 `data/sprint08c3_acceptance.json`；既有验收数据未删除。下一项为 Sprint 08D.1 Temporal Graph Foundation。

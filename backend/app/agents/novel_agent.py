@@ -143,6 +143,7 @@ class NovelAgent(BaseAgent):
         ]
         messages.extend(authoritative_messages)
 
+        memory_retrieval_metadata: dict = {}
         if context.use_memory:
 
             memory_context_args = {
@@ -165,6 +166,26 @@ class NovelAgent(BaseAgent):
             memory_context = await memory_context_builder.build(
                 **memory_context_args
             )
+
+            retrieval_mode = getattr(
+                memory_context,
+                "retrieval_mode",
+                None,
+            )
+            if retrieval_mode:
+                memory_retrieval_metadata = {
+                    "memory_retrieval_mode": retrieval_mode,
+                    "memory_retrieval_degraded": bool(
+                        getattr(
+                            memory_context,
+                            "retrieval_degraded",
+                            False,
+                        )
+                    ),
+                    "memory_retrieval_lanes": list(
+                        getattr(memory_context, "retrieval_lanes", [])
+                    ),
+                }
 
             if memory_context:
 
@@ -248,6 +269,7 @@ class NovelAgent(BaseAgent):
                 "agent": self.name,
             }
         )
+        request_metadata.update(memory_retrieval_metadata)
         if knowledge_base_ids:
             request_metadata.update(
                 {
@@ -292,6 +314,7 @@ class NovelAgent(BaseAgent):
                 "novel_id": context.novel_id,
             }
         )
+        response_metadata.update(memory_retrieval_metadata)
         if knowledge_base_ids:
             response_metadata.update(
                 {

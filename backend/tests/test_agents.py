@@ -26,6 +26,7 @@ from app.llm.schemas import (
     ChatResponse,
     TokenUsage,
 )
+from app.memory.context import MemoryContextBlock
 
 
 class DummyAgent(BaseAgent):
@@ -165,6 +166,53 @@ class AgentManagerTests(
 class NovelAgentTests(
     unittest.IsolatedAsyncioTestCase
 ):
+
+    async def test_novel_agent_exposes_memory_retrieval_diagnostics(
+        self,
+    ) -> None:
+
+        response = ChatResponse(
+            content="潮钟坐标仍待复核。",
+            model="qwen3:8b",
+            provider="qwen_local",
+        )
+        llm_manager = SimpleNamespace(
+            chat=AsyncMock(return_value=response)
+        )
+        memory_context = MemoryContextBlock(
+            "【Long-term Memory】\n- [plot] 潮钟坐标仍待复核。",
+            mode="vector_only",
+            degraded=True,
+            lanes=[
+                {"path": "vector", "status": "success"},
+                {"path": "graph", "status": "unavailable"},
+            ],
+        )
+
+        with patch.object(
+            novel_module.memory_context_builder,
+            "build",
+            new=AsyncMock(return_value=memory_context),
+        ):
+            result = await NovelAgent(llm_manager).run(
+                AgentContext(
+                    user_id="user001",
+                    novel_id="novel001",
+                    instruction="潮钟状态是什么？",
+                    use_canon=False,
+                )
+            )
+
+        request = llm_manager.chat.await_args.args[1]
+        self.assertEqual(
+            request.metadata["memory_retrieval_mode"],
+            "vector_only",
+        )
+        self.assertTrue(request.metadata["memory_retrieval_degraded"])
+        self.assertEqual(
+            result.metadata["memory_retrieval_lanes"][1]["status"],
+            "unavailable",
+        )
 
     async def test_novel_agent_injects_memory(
         self,

@@ -78,6 +78,18 @@ async def chat(
     memory_context = await memory_context_builder.build(
         **memory_context_args
     )
+    memory_retrieval_metadata = {}
+    retrieval_mode = getattr(memory_context, "retrieval_mode", None)
+    if retrieval_mode:
+        memory_retrieval_metadata = {
+            "memory_retrieval_mode": retrieval_mode,
+            "memory_retrieval_degraded": bool(
+                getattr(memory_context, "retrieval_degraded", False)
+            ),
+            "memory_retrieval_lanes": list(
+                getattr(memory_context, "retrieval_lanes", [])
+            ),
+        }
 
     if memory_context:
 
@@ -123,6 +135,19 @@ async def chat(
         request.provider,
         request,
     )
+
+    if memory_retrieval_metadata:
+        if isinstance(result, dict):
+            result_metadata = result.get("metadata")
+            if not isinstance(result_metadata, dict):
+                result_metadata = {}
+                result["metadata"] = result_metadata
+        else:
+            result_metadata = getattr(result, "metadata", None)
+            if not isinstance(result_metadata, dict):
+                result_metadata = {}
+                result.metadata = result_metadata
+        result_metadata.update(memory_retrieval_metadata)
 
     if external_context:
         if isinstance(result, dict):

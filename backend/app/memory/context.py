@@ -2,11 +2,28 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from app.memory.hybrid_retriever import (
-    hybrid_memory_retriever,
-)
 from app.memory.schemas import MemoryTier
 from app.memory.storage.sqlite import SQLiteMemoryStorage
+from app.retrieval.schemas import DualRetrievalRequest, RetrievalPath
+from app.retrieval.service import dual_path_retriever
+
+
+class MemoryContextBlock(str):
+    """String-compatible context carrying retrieval diagnostics."""
+
+    def __new__(
+        cls,
+        value: str,
+        *,
+        mode: str,
+        degraded: bool,
+        lanes: list[dict],
+    ):
+        instance = super().__new__(cls, value)
+        instance.retrieval_mode = mode
+        instance.retrieval_degraded = degraded
+        instance.retrieval_lanes = lanes
+        return instance
 
 
 class MemoryContextBuilder:
@@ -29,7 +46,12 @@ class MemoryContextBuilder:
             return ""
 
         memory_type = str(
-            getattr(memory, "memory_type", "") or ""
+            getattr(
+                memory,
+                "memory_type",
+                getattr(memory, "evidence_type", ""),
+            )
+            or ""
         ).strip()
         if hasattr(getattr(memory, "memory_type", None), "value"):
             memory_type = memory.memory_type.value
@@ -65,32 +87,45 @@ class MemoryContextBuilder:
             )
             session_memories = session_memories[:limit]
 
-        indexed_memories = await hybrid_memory_retriever.retrieve(
-            user_id=user_id,
-            novel_id=novel_id,
-            query=query,
-            top_k=limit * 2,
-            min_similarity=0.35,
-            memory_tiers={
-                MemoryTier.WORKING.value,
-                MemoryTier.LONG_TERM.value,
-            },
+        retrieval = await dual_path_retriever.retrieve(
+            DualRetrievalRequest(
+                user_id=user_id,
+                novel_id=novel_id,
+                query=query,
+                top_k=limit * 2,
+                char_budget=1800,
+                min_vector_similarity=0.35,
+            )
         )
 
-        working_memories = [
-            memory
-            for memory in indexed_memories
-            if str(
-                getattr(memory, "memory_tier", "long_term")
-            ) == MemoryTier.WORKING.value
-        ][:limit]
-        long_term_memories = [
-            memory
-            for memory in indexed_memories
-            if str(
-                getattr(memory, "memory_tier", "long_term")
-            ) == MemoryTier.LONG_TERM.value
-        ][:limit]
+        working_memories = []
+        long_term_memories = []
+        graph_memories = []
+        for evidence in retrieval.evidence:
+            vector_sources = [
+                source
+                for source in evidence.sources
+                if source.path == RetrievalPath.VECTOR
+            ]
+            if vector_sources:
+                tier = str(
+                    vector_sources[0].metadata.get(
+                        "memory_tier",
+                        MemoryTier.LONG_TERM.value,
+                    )
+                )
+                target = (
+                    working_memories
+                    if tier == MemoryTier.WORKING.value
+                    else long_term_memories
+                )
+            else:
+                target = graph_memories
+            target.append(evidence)
+
+        working_memories = working_memories[:limit]
+        long_term_memories = long_term_memories[:limit]
+        graph_memories = graph_memories[:limit]
 
         sections: list[str] = []
 
@@ -107,6 +142,10 @@ class MemoryContextBuilder:
                 "【Long-term Memory｜长期检索证据】",
                 long_term_memories,
             ),
+            (
+                "【Temporal Graph｜指定时间有效的关系与事件证据】",
+                graph_memories,
+            ),
         ):
             lines = [
                 line
@@ -120,7 +159,15 @@ class MemoryContextBuilder:
                 sections.append(title + "\n" + "\n".join(lines))
 
         if not sections:
-            return ""
+            return MemoryContextBlock(
+                "",
+                mode=retrieval.mode,
+                degraded=retrieval.degraded,
+                lanes=[
+                    lane.model_dump(mode="json")
+                    for lane in retrieval.lanes
+                ],
+            )
 
         header = dedent(
             """
@@ -138,17 +185,24 @@ class MemoryContextBuilder:
             5. 事实类问题只能复述直接证据，不得自行推断或拼接新结论。
             6. 不同层级互相冲突时必须指出冲突，不得静默覆盖。
             7. 新创作可以使用这些证据，但不得把新内容描述为既有记忆。
+            8. Temporal Graph 与 Vector 证据已经过确定性融合和去重；
+               Graph 不可用时系统会降级为 Vector-only，不得虚构 Graph 事实。
 
             ================ 分层小说记忆 ================
             """
         ).strip()
 
-        return "\n\n".join(
-            [
-                header,
-                *sections,
-                "============================================",
-            ]
+        text = "\n\n".join(
+            [header, *sections, "============================================"]
+        )
+        return MemoryContextBlock(
+            text,
+            mode=retrieval.mode,
+            degraded=retrieval.degraded,
+            lanes=[
+                lane.model_dump(mode="json")
+                for lane in retrieval.lanes
+            ],
         )
 
 

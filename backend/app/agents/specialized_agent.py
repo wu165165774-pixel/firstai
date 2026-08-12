@@ -298,10 +298,14 @@ class SpecializedAgent(NovelAgent):
     async def _load_memories(
         self,
         context: AgentContext,
-    ) -> tuple[list[GroundingMemory], str]:
+    ) -> tuple[list[GroundingMemory], str, dict]:
 
         if not context.use_memory:
-            return [], "disabled"
+            return [], "disabled", {
+                "mode": "disabled",
+                "degraded": False,
+                "lanes": [],
+            }
 
         if self._requires_type_scan(
             context.instruction
@@ -319,10 +323,14 @@ class SpecializedAgent(NovelAgent):
                 )
             )
 
-            return memories, "sqlite_type_scan"
+            return memories, "sqlite_type_scan", {
+                "mode": "sqlite_type_scan",
+                "degraded": False,
+                "lanes": [],
+            }
 
-        memories = (
-            await agent_grounding_service.retrieve(
+        retrieval = (
+            await agent_grounding_service.retrieve_with_diagnostics(
                 user_id=context.user_id,
                 novel_id=context.novel_id,
                 query=context.instruction,
@@ -334,7 +342,11 @@ class SpecializedAgent(NovelAgent):
             )
         )
 
-        return memories, "hybrid_semantic"
+        return retrieval.memories, "dual_path_fusion", {
+            "mode": retrieval.mode,
+            "degraded": retrieval.degraded,
+            "lanes": retrieval.lanes,
+        }
 
     async def _run_grounded(
         self,
@@ -343,7 +355,7 @@ class SpecializedAgent(NovelAgent):
 
         start = perf_counter()
 
-        memories, strategy = (
+        memories, strategy, retrieval_diagnostics = (
             await self._load_memories(
                 context
             )
@@ -371,6 +383,9 @@ class SpecializedAgent(NovelAgent):
                 "grounding_enforced": True,
                 "llm_called": False,
                 "retrieval_strategy": strategy,
+                "retrieval_mode": retrieval_diagnostics["mode"],
+                "retrieval_degraded": retrieval_diagnostics["degraded"],
+                "retrieval_lanes": retrieval_diagnostics["lanes"],
                 "memory_used": bool(memories),
                 "memory_count": len(memories),
                 "memory_ids": [
@@ -406,6 +421,12 @@ class SpecializedAgent(NovelAgent):
                         ),
                         "hybrid_score": (
                             memory.hybrid_score
+                        ),
+                        "source_paths": list(
+                            memory.source_paths
+                        ),
+                        "fusion_score": (
+                            memory.fusion_score
                         ),
                     }
                     for memory

@@ -14,6 +14,7 @@ from app.agents.character_agent import (
 from app.agents.grounding import (
     AgentGroundingService,
     GroundingMemory,
+    GroundingRetrieval,
 )
 from app.agents.plot_agent import (
     PlotAgent,
@@ -27,6 +28,7 @@ from app.agents.world_agent import (
 from app.llm.schemas import (
     ChatResponse,
 )
+from app.retrieval.schemas import RetrievalPath
 
 
 class AgentGroundingServiceTests(
@@ -44,22 +46,36 @@ class AgentGroundingServiceTests(
         )
 
         candidate = SimpleNamespace(
-            memory_id="memory-001",
-            memory_type="character",
+            evidence_id="FUSED:001",
+            evidence_type="character",
             content="\u6797\u51e1\u6027\u683c\u8c28\u614e\u3002",
-            similarity=0.9,
-            hybrid_score=0.8,
+            fusion_score=0.03,
+            source_paths=[RetrievalPath.VECTOR],
+            sources=[
+                SimpleNamespace(
+                    path=RetrievalPath.VECTOR,
+                    source_id="memory-001",
+                    score=0.8,
+                    metadata={
+                        "memory_tier": "long_term",
+                        "similarity": 0.9,
+                    },
+                )
+            ],
         )
 
         with patch(
             (
                 "app.agents.grounding."
-                "hybrid_memory_retriever.retrieve"
+                "dual_path_retriever.retrieve"
             ),
             new=AsyncMock(
-                return_value=[
-                    candidate,
-                ]
+                return_value=SimpleNamespace(
+                    evidence=[candidate],
+                    mode="vector_only",
+                    degraded=True,
+                    lanes=[],
+                )
             ),
         ):
 
@@ -311,10 +327,15 @@ class AgentGroundingTests(
         with patch(
             (
                 "app.agents.specialized_agent."
-                "agent_grounding_service.retrieve"
+                "agent_grounding_service.retrieve_with_diagnostics"
             ),
             new=AsyncMock(
-                return_value=memories
+                return_value=GroundingRetrieval(
+                    memories=memories,
+                    mode="vector_only",
+                    degraded=True,
+                    lanes=[],
+                )
             ),
         ):
 

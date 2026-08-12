@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.24
+v0.15.0-alpha.25
 ```
 
 已完成的主干能力：
@@ -51,11 +51,12 @@ v0.15.0-alpha.24
 - 全小说 Orchestrator 按冻结的 Chapter Plan revision 顺序逐章排队，并以 Manuscript 显式接受作为跨章推进门禁。
 - Session / Working / Long-term Memory 作为独立生命周期层，具备稳定 revision、提升门、TTL 淘汰、事件审计和分层检索。
 - External Knowledge 使用独立 SQLite/FAISS 命名空间、append-only source revisions、作用域隔离和可追踪 citation，并作为 P6 证据接入 Agent/Chat。
+- Vector/Graph 检索通过可插拔双 lane 并行执行、RRF 融合、内容去重和确定性字符预算接入 Agent/Chat；Graph Provider 缺失时显式降级，不伪造图事实。
 
 下一开发项：
 
 ```text
-Sprint 08C.3 - Dual-path Retrieval
+Sprint 08D.1 - Temporal Graph Foundation
 状态：待开发
 ```
 
@@ -71,7 +72,7 @@ Sprint 08C.3 - Dual-path Retrieval
 | 08B.3 | 全小说 Orchestrator | 已完成 | 按冻结 Chapter Plan 顺序逐章驱动 Workflow；暂停、恢复、重试、幂等和 Manuscript 人工门禁可恢复、可审计 |
 | 08C.1 | 三层 Memory | 已完成 | 内容类型与生命周期正交；Session/Working/Long-term 的作用域、TTL、提升门、淘汰、索引和事件可独立验收 |
 | 08C.2 | 外部知识库 | 已完成 | 小说内容库与外部知识库物理/逻辑隔离，引用来源可追踪 |
-| 08C.3 | 双路并行检索 | 待开发 | Temporal/Graph 与 Vector RAG 并行，结果融合、去重、预算和降级可测 |
+| 08C.3 | 双路并行检索 | 已完成 | Temporal/Graph 与 Vector RAG 并行，结果融合、去重、预算和降级可测 |
 | 08D.1 | Temporal Graph 基础 | 待开发 | 角色、地点、事件、关系、时间有效区间与来源 revision 可持久化 |
 | 08D.2 | Consistency Engine | 待开发 | 写作前约束、写作后事实抽取、冲突检测、审核修复形成闭环 |
 | 08D.3 | Graph/Vector 融合与事实回写 | 待开发 | 新正文接受后原子/幂等地更新记忆、向量和图事实 |
@@ -225,6 +226,14 @@ Retrieval
 - 提升只能相邻执行，保持稳定 memory ID，并以 revision 和 append-only lifecycle event 审计。
 - Long-term 不自动淘汰；Working -> Long-term 要求权威 basis、足够 importance，并在来源型提升时保存 `source_reference`。
 - 旧记录自动迁移为 Long-term，不改变现有 `memory_type` 或旧 API 默认行为。
+
+08C.3 已完成双路检索执行与融合边界：
+
+- Vector lane 复用现有 Working/Long-term Hybrid Memory；Session 继续按精确 SQLite scope 加载。
+- Vector 与 Graph lane 使用独立超时并发执行，单 lane 不可用、失败或超时不会拖垮另一 lane。
+- 结果使用确定性 RRF、规范化内容指纹去重、`top_k` 与字符预算，并保留每条来源的 path、ID、rank、score 和 metadata。
+- API、Memory Context、Novel Agent、Chat 和专业 Agent 返回显式 lane 诊断与降级状态。
+- 08D.1 实现前默认 Graph Provider 明确为 unavailable；生产结果为 `vector_only`，不创建占位图表或伪造图证据。
 
 ## 6. 每个 Sprint 的发布门禁
 

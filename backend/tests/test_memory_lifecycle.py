@@ -33,6 +33,7 @@ from app.memory.storage.sqlite import (
     SQLiteMemoryStorage,
 )
 from app.rag.consistency import MemoryIndexConsistencyService
+from app.retrieval.schemas import RetrievalPath
 
 
 class MemoryLifecycleSchemaTests(unittest.TestCase):
@@ -504,11 +505,31 @@ class MemoryTieredContextTests(unittest.IsolatedAsyncioTestCase):
                 content="潮钟来自空白海域。",
             ),
         ]
-        mocked_retrieve = AsyncMock(return_value=indexed)
+        evidence = [
+            SimpleNamespace(
+                content=item.content,
+                evidence_type=item.memory_type,
+                sources=[
+                    SimpleNamespace(
+                        path=RetrievalPath.VECTOR,
+                        metadata={"memory_tier": item.memory_tier},
+                    )
+                ],
+            )
+            for item in indexed
+        ]
+        mocked_retrieve = AsyncMock(
+            return_value=SimpleNamespace(
+                evidence=evidence,
+                mode="vector_only",
+                degraded=True,
+                lanes=[],
+            )
+        )
 
         builder = MemoryContextBuilder(storage=self.storage)
         with patch.object(
-            context_module.hybrid_memory_retriever,
+            context_module.dual_path_retriever,
             "retrieve",
             new=mocked_retrieve,
         ):
@@ -530,8 +551,8 @@ class MemoryTieredContextTests(unittest.IsolatedAsyncioTestCase):
             result.index("Long-term Memory"),
         )
         self.assertEqual(
-            mocked_retrieve.await_args.kwargs["memory_tiers"],
-            {"working", "long_term"},
+            mocked_retrieve.await_args.args[0].top_k,
+            8,
         )
 
 
