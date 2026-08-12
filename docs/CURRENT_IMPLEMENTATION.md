@@ -2643,3 +2643,70 @@ finish_reason = stop
 ```
 
 验收记录保存在 `data/sprint08c3_acceptance.json`；既有验收数据未删除。下一项为 Sprint 08D.1 Temporal Graph Foundation。
+
+## v0.15.0-alpha.26 — Sprint 08D.1 Temporal Graph Foundation
+
+NovelForge 新增独立 Temporal Graph 权威库，并将真实 Graph Provider 接入既有双路检索：
+
+```text
+novel_entities (canonical identity)
+          │
+          v
+temporal_graph.db
+  ├── temporal_events
+  ├── temporal_event_participants
+  ├── temporal_event_revisions
+  ├── temporal_relations
+  └── temporal_relation_revisions
+          │
+          v
+Graph Provider + Vector Provider -> RRF / dedup / budget
+```
+
+核心边界：
+
+- `novel_entities` 仍是实体身份的唯一权威；Graph 只保存对稳定 entity ID 的引用。
+- Event 与 Relation 使用当前聚合加 append-only revision snapshot，更新受 `expected_revision` 与 `BEGIN IMMEDIATE` 保护。
+- Event participants 物理规范化，地点必须引用 `location` 实体；不存在或跨小说的实体不能写入。
+- 时间范围使用闭合 chapter interval，支持指定章节的 current 查询和显式 historical 查询。
+- 来源仅允许精确 Story Bible revision 或 accepted Manuscript revision；后者必须匹配正文 chapter。
+- 本 Sprint 不自动抽取、不回写、不修改 Canon/Memory/Manuscript，保留 08D.3 的事实写入边界。
+
+Temporal Graph API 提供 Event/Relation 创建、读取、更新、列表、revision 历史与统一 query。查询支持 active entity、chapter、context、event type、predicate 和 historical 过滤，并返回有效区间、confidence、来源 revision 与 Graph revision。
+
+检索与 Agent 接入：
+
+- 默认 Graph lane 已替换为真实 `TemporalGraphRetrievalProvider`；数据库查询在线程中执行，不阻塞异步 lane 调度。
+- Graph Provider 消费 `active_entity_ids`、`allowed_memory_types` 和 `as_of=chapter:N`，输出完整 provenance。
+- Memory Context、Chat、Novel Agent、Character/World/Plot 等 grounded Agent 自动从 metadata 转发 active character/location/entity IDs 与 chapter number。
+- 正确 scope 下 Graph 与 Vector 可同时成功并按规范化内容去重；错误用户 scope 返回零证据并安全降级。
+
+自动化验证：
+
+```text
+16/16 Temporal Graph focused tests passed
+14/14 Dual Retrieval focused tests passed
+390/390 first full regression passed
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实运行态验收：
+
+```text
+scope user = acceptance-08d1-15468ee84ff2
+scope novel = 6bb1eaa5-d175-4a93-892e-3ec7271ddd95
+marker = 08D1-AZURE-15468ee84ff2
+
+event revision advanced 1 -> 2; stale update returned HTTP 409
+chapter 2 current = historical hostile relation only
+chapter 3 current = oath event + current ally relation
+chapter 3 historical = current facts + ended hostile relation
+fused evidence preserved Vector memory ID and Graph event ID
+grounded Character Agent answered the chapter-valid ally relation without LLM
+qwen3:8b answered the exact oath event; retrieval mode = dual, degraded = false
+wrong-user retrieval returned zero evidence
+```
+
+验收记录保存在 `data/sprint08d1_acceptance.json`；既有数据库与验收数据未删除。下一项为 Sprint 08D.2 Consistency Engine。

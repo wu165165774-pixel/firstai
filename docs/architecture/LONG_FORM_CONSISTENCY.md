@@ -27,7 +27,7 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 3. 别名没有确定性索引；同名、近名和别名只能由 LLM 自行理解。
 4. 审计时 Memory 只有内容分类，不是严格的 Session / Working / Long-term 生命周期模型；该项已由 08C.1 解决。
 5. Memory 和 FAISS 返回的是上下文证据，当前 Context Builder 尚未建立 Canon 优先级。
-6. 还没有 Temporal Graph，无法区分当前关系与历史关系、当前地点与历史地点。
+6. 审计时尚无 Temporal Graph；08D.1 已通过章节有效区间、current/historical 查询和来源 revision 解决这一基础能力。
 7. 还没有 Knowledge Scope，POV Writer 无法可靠隔离世界真相、角色知识与角色信念。
 8. Review Agent 以通用 LLM 审核为主，没有实体、关系、生死、地点等确定性检查器。
 9. Chapter Workflow 还没有绑定正式 Chapter Plan，写作输入主要依赖自由文本 instruction。
@@ -50,10 +50,10 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 - 实体 create/update/read/list/resolve schema。
 - 显式的 `resolved / ambiguous / not_found` 解析结果。
 
-后续阶段再增加：
+后续阶段已增加或仍待增加：
 
 - Story Bible 的兼容实体引用。
-- 带 source、confidence、chapter range 的动态状态。
+- 08D.1 已增加带 source、confidence、chapter range 的事件与关系动态状态。
 - Active Scene Entities 和 Knowledge Scope。
 - 统一 consistency conflict schema。
 
@@ -133,13 +133,15 @@ NovelForge 已经具备稳定的规划领域、可恢复章节工作流、本地
 
 ## 8. P1 / P2 路线
 
-### P1：Temporal State
+### P1：Temporal State（08D.1 基础已完成）
 
 - 动态人物状态和关系有效区间。
 - current / historical 查询。
 - source、confidence、source chapter 和来源 revision。
 - Active Scene Entities 驱动的 entity-aware retrieval。
 - Graph/Vector 结果融合、去重、冲突仲裁和 context budget。
+
+08D.1 以独立 `temporal_graph.db` 保存当前聚合和 append-only revision snapshot；实体身份仍由 `novel_entities` 唯一授权。Graph Provider 已接入 08C.3 双 lane，并消费 active entity 与 chapter 坐标。事实抽取、冲突仲裁和 accepted Manuscript 后的原子/幂等回写仍属于 08D.2/08D.3。
 
 ### P2：Consistency Engine
 
@@ -181,4 +183,4 @@ backend/tests/test_planner_agent.py
 
 ## 10. 已识别技术债
 
-08C.1 已修复 `MemoryExtractor` 对同一抽取结果重复调用 `memory_manager.add_memory(...)` 的路径，并以独立回归测试证明每个事实只保存一次。后续技术债集中在 08C.2 外部知识隔离和 08C.3 Graph/Vector 双路融合，不在三层生命周期中提前实现。
+08C.1 已修复 `MemoryExtractor` 对同一抽取结果重复调用 `memory_manager.add_memory(...)` 的路径，并以独立回归测试证明每个事实只保存一次。08C.2 外部知识隔离、08C.3 Graph/Vector 双路融合和 08D.1 Temporal Graph 基础均已完成；当前技术债集中在确定性 Consistency Engine 与 accepted Manuscript 后的原子、幂等事实回写。

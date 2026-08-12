@@ -65,12 +65,21 @@ class MemoryContextBuilder:
         query: str = "",
         top_k: int = 6,
         session_id: str | None = None,
+        active_entity_ids: list[str] | None = None,
+        as_of_chapter: int | None = None,
     ) -> str:
 
         user_id = str(user_id or "").strip()
         novel_id = str(novel_id or "").strip()
         query = str(query or "").strip()
         session_id = str(session_id or "").strip() or None
+        active_entity_ids = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in (active_entity_ids or [])
+                if str(item).strip()
+            )
+        )
 
         if not user_id or not novel_id or not query:
             return ""
@@ -95,6 +104,12 @@ class MemoryContextBuilder:
                 top_k=limit * 2,
                 char_budget=1800,
                 min_vector_similarity=0.35,
+                active_entity_ids=active_entity_ids,
+                as_of=(
+                    f"chapter:{as_of_chapter}"
+                    if as_of_chapter is not None
+                    else None
+                ),
             )
         )
 

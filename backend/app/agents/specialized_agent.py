@@ -339,6 +339,23 @@ class SpecializedAgent(NovelAgent):
                 ),
                 top_k=8,
                 min_similarity=0.35,
+                active_entity_ids=list(
+                    dict.fromkeys(
+                        str(item)
+                        for key in (
+                            "active_entity_ids",
+                            "active_character_ids",
+                            "active_location_ids",
+                        )
+                        for item in context.metadata.get(key, [])
+                        if isinstance(context.metadata.get(key, []), list)
+                    )
+                ),
+                as_of_chapter=(
+                    int(context.metadata["chapter_number"])
+                    if context.metadata.get("chapter_number") is not None
+                    else None
+                ),
             )
         )
 

@@ -74,6 +74,25 @@ async def chat(
     session_id = metadata.get("session_id")
     if session_id:
         memory_context_args["session_id"] = str(session_id)
+    active_entity_ids: list[str] = []
+    for key in (
+        "active_entity_ids",
+        "active_character_ids",
+        "active_location_ids",
+    ):
+        values = metadata.get(key, [])
+        if isinstance(values, list):
+            active_entity_ids.extend(str(value) for value in values)
+    active_entity_ids = list(
+        dict.fromkeys(
+            value.strip() for value in active_entity_ids if value.strip()
+        )
+    )
+    if active_entity_ids:
+        memory_context_args["active_entity_ids"] = active_entity_ids
+    chapter_number = metadata.get("chapter_number")
+    if chapter_number is not None:
+        memory_context_args["as_of_chapter"] = int(chapter_number)
 
     memory_context = await memory_context_builder.build(
         **memory_context_args

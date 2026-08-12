@@ -146,6 +146,25 @@ class NovelAgent(BaseAgent):
         memory_retrieval_metadata: dict = {}
         if context.use_memory:
 
+            retrieval_entity_ids: list[str] = []
+            for key in (
+                "active_entity_ids",
+                "active_character_ids",
+                "active_location_ids",
+            ):
+                values = context.metadata.get(key, [])
+                if isinstance(values, list):
+                    retrieval_entity_ids.extend(
+                        str(value) for value in values
+                    )
+            retrieval_entity_ids = list(
+                dict.fromkeys(
+                    value.strip()
+                    for value in retrieval_entity_ids
+                    if value.strip()
+                )
+            )
+
             memory_context_args = {
                 "user_id": context.user_id,
                 "novel_id": context.novel_id,
@@ -161,6 +180,15 @@ class NovelAgent(BaseAgent):
             if session_id:
                 memory_context_args["session_id"] = str(
                     session_id
+                )
+            if retrieval_entity_ids:
+                memory_context_args["active_entity_ids"] = (
+                    retrieval_entity_ids
+                )
+            chapter_number = context.metadata.get("chapter_number")
+            if chapter_number is not None:
+                memory_context_args["as_of_chapter"] = int(
+                    chapter_number
                 )
 
             memory_context = await memory_context_builder.build(

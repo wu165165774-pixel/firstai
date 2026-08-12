@@ -32,7 +32,7 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.25
+v0.15.0-alpha.26
 ```
 
 已完成的主干能力：
@@ -52,11 +52,12 @@ v0.15.0-alpha.25
 - Session / Working / Long-term Memory 作为独立生命周期层，具备稳定 revision、提升门、TTL 淘汰、事件审计和分层检索。
 - External Knowledge 使用独立 SQLite/FAISS 命名空间、append-only source revisions、作用域隔离和可追踪 citation，并作为 P6 证据接入 Agent/Chat。
 - Vector/Graph 检索通过可插拔双 lane 并行执行、RRF 融合、内容去重和确定性字符预算接入 Agent/Chat；Graph Provider 缺失时显式降级，不伪造图事实。
+- Temporal Graph 使用独立 SQLite 权威库持久化事件、关系、章节有效区间和不可变来源 revision，并通过真实 Graph Provider 接入双路检索。
 
 下一开发项：
 
 ```text
-Sprint 08D.1 - Temporal Graph Foundation
+Sprint 08D.2 - Consistency Engine
 状态：待开发
 ```
 
@@ -73,7 +74,7 @@ Sprint 08D.1 - Temporal Graph Foundation
 | 08C.1 | 三层 Memory | 已完成 | 内容类型与生命周期正交；Session/Working/Long-term 的作用域、TTL、提升门、淘汰、索引和事件可独立验收 |
 | 08C.2 | 外部知识库 | 已完成 | 小说内容库与外部知识库物理/逻辑隔离，引用来源可追踪 |
 | 08C.3 | 双路并行检索 | 已完成 | Temporal/Graph 与 Vector RAG 并行，结果融合、去重、预算和降级可测 |
-| 08D.1 | Temporal Graph 基础 | 待开发 | 角色、地点、事件、关系、时间有效区间与来源 revision 可持久化 |
+| 08D.1 | Temporal Graph 基础 | 已完成 | 角色、地点、事件、关系、时间有效区间与来源 revision 可持久化 |
 | 08D.2 | Consistency Engine | 待开发 | 写作前约束、写作后事实抽取、冲突检测、审核修复形成闭环 |
 | 08D.3 | Graph/Vector 融合与事实回写 | 待开发 | 新正文接受后原子/幂等地更新记忆、向量和图事实 |
 | 08E | Vue 创作工作台 | 待开发 | Project/Bible/Plan/Arc/Chapter/Workflow/Review/Manuscript 可视化操作闭环 |
@@ -233,7 +234,7 @@ Retrieval
 - Vector 与 Graph lane 使用独立超时并发执行，单 lane 不可用、失败或超时不会拖垮另一 lane。
 - 结果使用确定性 RRF、规范化内容指纹去重、`top_k` 与字符预算，并保留每条来源的 path、ID、rank、score 和 metadata。
 - API、Memory Context、Novel Agent、Chat 和专业 Agent 返回显式 lane 诊断与降级状态。
-- 08D.1 实现前默认 Graph Provider 明确为 unavailable；生产结果为 `vector_only`，不创建占位图表或伪造图证据。
+- 08D.1 已将独立 Temporal Graph 权威库接入 Graph Provider；无图数据时 lane 健康返回空集，小说不存在或用户 scope 不匹配时显式降级为 unavailable。
 
 ## 6. 每个 Sprint 的发布门禁
 

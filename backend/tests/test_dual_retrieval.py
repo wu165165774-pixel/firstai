@@ -280,6 +280,34 @@ class DualPathRetrieverTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RetrievalAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_memory_context_forwards_entity_and_chapter_coordinates(
+        self,
+    ) -> None:
+        storage = SimpleNamespace(query=AsyncMock(return_value=[]))
+        retrieve = AsyncMock(
+            return_value=SimpleNamespace(
+                evidence=[],
+                mode="dual",
+                degraded=False,
+                lanes=[],
+            )
+        )
+        with patch(
+            "app.memory.context.dual_path_retriever.retrieve",
+            new=retrieve,
+        ):
+            await MemoryContextBuilder(storage=storage).build(
+                user_id="u",
+                novel_id="n",
+                query="q",
+                active_entity_ids=["char_lan", "char_lan"],
+                as_of_chapter=7,
+            )
+
+        request = retrieve.await_args.args[0]
+        self.assertEqual(request.active_entity_ids, ["char_lan"])
+        self.assertEqual(request.as_of, "chapter:7")
+
     async def test_chat_exposes_memory_retrieval_diagnostics(self) -> None:
         memory_context = MemoryContextBlock(
             "【Long-term Memory】\n- [plot] 潮钟坐标仍待复核。",

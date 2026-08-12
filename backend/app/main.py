@@ -11,6 +11,7 @@ from app.api.v1.chat import router as chat_router
 from app.api.v1.external_knowledge import router as external_knowledge_router
 from app.api.v1.memory import router as memory_router
 from app.api.v1.retrieval import router as retrieval_router
+from app.api.v1.temporal_graph import router as temporal_graph_router
 from app.api.v1.providers import router as provider_router
 from app.api.v1.workflows import router as workflow_router
 from app.config.settings import settings
@@ -69,7 +70,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.25",
+    version="0.15.0-alpha.26",
     lifespan=lifespan,
 )
 
@@ -108,6 +109,12 @@ app.include_router(
     retrieval_router,
     prefix="/api/v1",
     tags=["Retrieval"],
+)
+
+app.include_router(
+    temporal_graph_router,
+    prefix="/api/v1",
+    tags=["Temporal Graph"],
 )
 
 app.include_router(

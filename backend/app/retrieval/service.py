@@ -11,7 +11,7 @@ from .providers import (
     RetrievalCandidate,
     RetrievalPathUnavailable,
     RetrievalProvider,
-    UnavailableTemporalGraphProvider,
+    TemporalGraphRetrievalProvider,
     VectorMemoryRetrievalProvider,
 )
 from .schemas import (
@@ -45,7 +45,7 @@ class DualPathRetriever:
         graph_provider: RetrievalProvider | None = None,
     ) -> None:
         self.vector_provider = vector_provider or VectorMemoryRetrievalProvider()
-        self.graph_provider = graph_provider or UnavailableTemporalGraphProvider()
+        self.graph_provider = graph_provider or TemporalGraphRetrievalProvider()
 
     @staticmethod
     def _fingerprint(content: str) -> str:

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.memory.hybrid_retriever import hybrid_memory_retriever
 from app.memory.schemas import MemoryTier
+from app.novels.storage import NovelProjectNotFoundError
+from app.temporal_graph.schemas import TemporalGraphQueryRequest
+from app.temporal_graph.service import temporal_graph_service
 
 from .schemas import DualRetrievalRequest, RetrievalPath
 
@@ -100,18 +105,70 @@ class VectorMemoryRetrievalProvider:
         return result
 
 
-class UnavailableTemporalGraphProvider:
-    """Explicit placeholder until Sprint 08D.1 supplies graph storage."""
+class TemporalGraphRetrievalProvider:
+    """Retrieve chapter-valid event/relation evidence from Temporal Graph."""
 
     path = RetrievalPath.GRAPH
+
+    @staticmethod
+    def _as_of_chapter(value: str | None) -> int | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().casefold()
+        if not normalized:
+            return None
+        if normalized.isdigit():
+            return int(normalized)
+        for prefix in ("chapter:", "chapter-", "chapter#"):
+            if normalized.startswith(prefix):
+                suffix = normalized[len(prefix) :].strip()
+                if suffix.isdigit():
+                    return int(suffix)
+        raise ValueError("as_of must be a chapter number")
 
     async def retrieve(
         self,
         request: DualRetrievalRequest,
         candidate_k: int,
     ) -> list[RetrievalCandidate]:
-        del request, candidate_k
-        raise RetrievalPathUnavailable(
-            "Temporal Graph provider is not configured (planned for Sprint 08D.1)."
-        )
-
+        contexts = [
+            item
+            for item in request.allowed_memory_types
+            if item in {"character", "world", "plot", "short_term"}
+        ]
+        try:
+            result = await asyncio.to_thread(
+                temporal_graph_service.query,
+                request.novel_id,
+                TemporalGraphQueryRequest(
+                    query=request.query,
+                    active_entity_ids=request.active_entity_ids,
+                    as_of_chapter=self._as_of_chapter(request.as_of),
+                    include_historical=False,
+                    context_types=contexts,
+                    top_k=min(candidate_k, 100),
+                ),
+                expected_user_id=request.user_id,
+            )
+        except NovelProjectNotFoundError as exc:
+            raise RetrievalPathUnavailable(
+                "Temporal Graph scope is unavailable"
+            ) from exc
+        return [
+            RetrievalCandidate(
+                path=self.path,
+                source_id=item.graph_id,
+                content=item.content,
+                evidence_type=item.context_type,
+                score=item.score,
+                metadata={
+                    "graph_kind": item.graph_kind,
+                    "entity_ids": item.entity_ids,
+                    "valid_from_chapter": item.valid_from_chapter,
+                    "valid_to_chapter": item.valid_to_chapter,
+                    "source": item.source.model_dump(mode="json"),
+                    **item.metadata,
+                },
+            )
+            for item in result.evidence
+        ]

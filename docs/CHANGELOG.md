@@ -3,6 +3,15 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.26
+
+- Added an independent SQLite Temporal Graph authority for events, relations, normalized participants, chapter-valid intervals, and immutable revision snapshots.
+- Enforced canonical entity references plus exact Story Bible or accepted Manuscript source revisions without automatic fact extraction or persistence.
+- Added current/historical Graph APIs, deterministic entity/time-aware retrieval, and optimistic concurrency with HTTP 409 conflicts.
+- Replaced the placeholder Graph lane with the real Temporal Graph provider while preserving Vector-only degradation for unavailable scopes.
+- Forwarded active entities and chapter coordinates through Memory Context, Chat, Novel Agent, and grounded specialized Agents.
+- Added real Graph/Vector fusion and local `qwen3:8b` acceptance plus 390-test regression coverage.
+
 ## v0.15.0-alpha.25
 
 - Added concurrent Vector/Graph retrieval lanes with independent timeout, failure isolation, and explicit degradation diagnostics.

@@ -200,6 +200,8 @@ class AgentGroundingService:
         ) = None,
         top_k: int = 6,
         min_similarity: float = 0.35,
+        active_entity_ids: list[str] | None = None,
+        as_of_chapter: int | None = None,
     ) -> list[GroundingMemory]:
 
         result = await self.retrieve_with_diagnostics(
@@ -209,6 +211,8 @@ class AgentGroundingService:
             allowed_memory_types=allowed_memory_types,
             top_k=top_k,
             min_similarity=min_similarity,
+            active_entity_ids=active_entity_ids,
+            as_of_chapter=as_of_chapter,
         )
         return result.memories
 
@@ -224,6 +228,8 @@ class AgentGroundingService:
         ) = None,
         top_k: int = 6,
         min_similarity: float = 0.35,
+        active_entity_ids: list[str] | None = None,
+        as_of_chapter: int | None = None,
     ) -> GroundingRetrieval:
 
         user_id = str(
@@ -268,6 +274,12 @@ class AgentGroundingService:
                 ),
                 min_vector_similarity=min_similarity,
                 allowed_memory_types=sorted(allowed_types or set()),
+                active_entity_ids=list(active_entity_ids or []),
+                as_of=(
+                    f"chapter:{as_of_chapter}"
+                    if as_of_chapter is not None
+                    else None
+                ),
             )
         )
 
