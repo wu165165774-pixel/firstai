@@ -20,6 +20,7 @@ from app.manuscripts.storage import (
 )
 from app.novels.schemas import (
     ChapterPlanCreate,
+    NovelEntityCreate,
     NovelPlanUpdate,
     NovelProjectCreate,
     StoryArcCreate,
@@ -50,6 +51,10 @@ def scores() -> ReviewScores:
     )
 
 
+async def _zero_async() -> int:
+    return 0
+
+
 class ManuscriptFixture:
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -73,6 +78,19 @@ class ManuscriptFixture:
                 premise="档案员发现被删除的潮汐记录。",
             )
         )
+        for entity_id, entity_type, name in (
+            ("char_lan", "character", "岚"),
+            ("char_qi", "character", "祁"),
+            ("loc_tower", "location", "北塔"),
+        ):
+            self.novel_service.create_entity(
+                self.project.novel_id,
+                NovelEntityCreate(
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    canonical_name=name,
+                ),
+            )
         current_plan = self.novel_service.get_novel_plan(
             self.project.novel_id
         )
@@ -139,6 +157,7 @@ class ManuscriptFixture:
         contents: list[str] | None = None,
         approved: bool = True,
         novel_id: str | None = None,
+        candidate_facts: list[dict] | None = None,
     ) -> str:
         chapter = chapter or self.chapter_one
         contents = contents or ["第一版正文。", "修订后的正文。"]
@@ -172,6 +191,7 @@ class ManuscriptFixture:
             summary="审核通过。" if approved else "仍需修改。",
             scores=review_scores,
             issues=[],
+            candidate_facts=candidate_facts or [],
         )
         result = ChapterWorkflowResult(
             status="completed" if approved else "max_revisions_reached",
@@ -193,7 +213,11 @@ class ManuscriptFixture:
                 "story_arc_revision": self.arc.revision,
                 "novel_plan_revision": self.plan.revision,
                 "source_project_revision": self.project.revision,
-                "source_story_bible_revision": 1,
+                "source_story_bible_revision": (
+                    self.novel_service.get_story_bible(
+                        self.project.novel_id
+                    ).revision
+                ),
             },
         )
         self.workflow_storage.finalize_run(created["run_id"], result)
@@ -231,8 +255,12 @@ class ManuscriptStorageTests(ManuscriptFixture, unittest.TestCase):
             }
         self.assertIn("manuscript_chapters", tables)
         self.assertIn("manuscript_revisions", tables)
+        self.assertIn("manuscript_fact_projections", tables)
         self.assertIn("idx_manuscript_chapters_order", indexes)
         self.assertIn("idx_manuscript_revisions_time", indexes)
+        self.assertIn("idx_fact_projections_status", indexes)
+        self.assertIn("idx_fact_projections_revision", indexes)
+        self.assertIn("idx_fact_projections_replacement", indexes)
 
     def test_import_creates_stable_chapter_and_immutable_revisions(self) -> None:
         run_id = self.create_workflow()
@@ -259,6 +287,87 @@ class ManuscriptStorageTests(ManuscriptFixture, unittest.TestCase):
         )
         self.assertEqual(approved.source_novel_plan_revision, 2)
         self.assertEqual(approved.quality_scores["overall"], 91.0)
+
+    def test_only_approved_revision_freezes_candidate_facts(self) -> None:
+        fact = {
+            "fact_id": "FACT-001",
+            "fact_type": "event",
+            "subject_name": "档案员",
+            "predicate": "发现",
+            "evidence": "档案员发现被删除的记录。",
+            "chapter_number": 1,
+        }
+        imported = self.import_run(
+            self.create_workflow(
+                contents=["草稿。", "档案员发现被删除的记录。"],
+                candidate_facts=[fact],
+            )
+        )
+
+        self.assertEqual(imported.imported_revisions[0].candidate_facts, [])
+        self.assertEqual(
+            imported.imported_revisions[1].candidate_facts[0].fact_id,
+            "FACT-001",
+        )
+
+    def test_import_rejects_persisted_blocking_consistency_conflict(self) -> None:
+        run_id = self.create_workflow(contents=["仍有冲突的正文。"])
+        with self.workflow_storage._connect() as conn:
+            row = conn.execute(
+                "SELECT result_json FROM workflow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            import json
+
+            result = json.loads(row["result_json"])
+            result["consistency_conflicts"] = [
+                {
+                    "conflict_id": "CONFLICT-1",
+                    "conflict_type": "relationship_conflict",
+                    "severity": "major",
+                    "status": "confirmed",
+                    "blocking": True,
+                    "message": "conflict",
+                    "expected": "ally",
+                    "generated": "enemy",
+                    "recommendation": "rewrite",
+                    "entity_ids": [],
+                    "candidate_fact_id": "FACT-1",
+                    "evidence": [],
+                }
+            ]
+            conn.execute(
+                "UPDATE workflow_runs SET result_json = ? WHERE run_id = ?",
+                (json.dumps(result, ensure_ascii=False), run_id),
+            )
+            conn.commit()
+
+        with self.assertRaisesRegex(
+            ManuscriptConflictError,
+            "unresolved blocking consistency conflicts",
+        ):
+            self.import_run(run_id)
+
+    def test_import_rejects_candidate_fact_wrong_chapter(self) -> None:
+        run_id = self.create_workflow(
+            contents=["档案员发现记录。"],
+            candidate_facts=[
+                {
+                    "fact_id": "FACT-WRONG-CHAPTER",
+                    "fact_type": "event",
+                    "subject_name": "档案员",
+                    "predicate": "发现",
+                    "evidence": "档案员发现记录。",
+                    "chapter_number": 2,
+                }
+            ],
+        )
+
+        with self.assertRaisesRegex(
+            ManuscriptConflictError,
+            "candidate fact chapter",
+        ):
+            self.import_run(run_id)
 
     def test_import_is_idempotent_by_workflow_run(self) -> None:
         run_id = self.create_workflow()
@@ -519,13 +628,24 @@ class ManuscriptApiTests(ManuscriptFixture, unittest.TestCase):
 
         self.module = manuscripts
         self.original_service = manuscripts.service
+        self.original_projection_service = manuscripts.projection_service
         manuscripts.service = self.service
+        manuscripts.projection_service = type(
+            "NoopProjectionService",
+            (),
+            {
+                "project_chapter": staticmethod(
+                    lambda manuscript_chapter_id: _zero_async()
+                )
+            },
+        )()
         app = FastAPI()
         app.include_router(manuscripts.router, prefix="/api/v1")
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         self.module.service = self.original_service
+        self.module.projection_service = self.original_projection_service
         super().tearDown()
 
     def test_import_list_get_revisions_and_accept_api(self) -> None:
@@ -604,6 +724,13 @@ class ManuscriptApiTests(ManuscriptFixture, unittest.TestCase):
             + "/{manuscript_chapter_id}/revisions/{revision}/accept",
             paths,
         )
+        projection = (
+            prefix
+            + "/{manuscript_chapter_id}/revisions/{revision}"
+            "/fact-projection"
+        )
+        self.assertIn(projection, paths)
+        self.assertIn(projection + "/retry", paths)
 
 
 if __name__ == "__main__":

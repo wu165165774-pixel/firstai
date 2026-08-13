@@ -294,6 +294,55 @@ class ConsistencyCheckTests(ConsistencyFixture):
             ["relationship_conflict"],
         )
 
+    def test_character_belief_may_contradict_world_state(self) -> None:
+        result = self.engine.check(
+            self.novel_id,
+            self.request(
+                "岚误以为祁是敌人。",
+                [
+                    self.relationship_fact(
+                        evidence="岚误以为祁是敌人。",
+                        knowledge_scope="CHARACTER_BELIEF",
+                        knowledge_holder_entity_id="char_lan",
+                    )
+                ],
+            ),
+        )
+        self.assertEqual(result.conflicts, [])
+
+    def test_character_scoped_graph_fact_is_not_world_truth(self) -> None:
+        source = TemporalSourceReference(
+            source_type="story_bible",
+            source_id=self.novel_id,
+            source_revision=self.bible.revision,
+        )
+        self.graph_service.create_relation(
+            self.novel_id,
+            TemporalRelationCreate(
+                relation_id="rel_believed_hostile",
+                subject_entity_id="char_lan",
+                predicate="敌对",
+                object_entity_id="char_qi",
+                valid_from_chapter=3,
+                source=source,
+                metadata={
+                    "knowledge_scope": "CHARACTER_BELIEF",
+                    "knower_entity_ids": ["char_lan"],
+                },
+            ),
+        )
+        result = self.engine.check(
+            self.novel_id,
+            self.request(
+                "岚和祁是盟友。",
+                [self.relationship_fact(
+                    predicate="盟友",
+                    evidence="岚和祁是盟友。",
+                )],
+            ),
+        )
+        self.assertEqual(result.conflicts, [])
+
     def test_symmetric_relationship_conflict_checks_reverse_edge(self) -> None:
         result = self.engine.check(
             self.novel_id,

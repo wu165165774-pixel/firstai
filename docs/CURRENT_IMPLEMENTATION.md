@@ -2773,3 +2773,53 @@ git diff --check passed
 真实运行态验收复用并保留 08D.1 小说 `6bb1eaa5-d175-4a93-892e-3ec7271ddd95`。第 3 章当前 Graph 记录岚与祁为盟友；输入“岚对祁拔剑，宣称两人一直是敌人”后，在线确定性 API 与修复后的真实 `qwen3:8b` 抽取路径均返回 blocking `relationship_conflict`。真实调用 token 为 258/440/698，章节固定为 3，`persisted=false`；调用前后 Temporal Graph revision 行数保持 Event 2、Relation 2。
 
 验收记录保存在 `data/sprint08d2_acceptance.json`；既有数据库与验收数据未删除。下一项为 Sprint 08D.3 accepted Manuscript 后的原子、幂等事实回写。
+
+## v0.15.0-alpha.28 — Sprint 08D.3 Accepted Fact Projection
+
+NovelForge 已把 Review 候选事实接入显式 Manuscript 接受边界：
+
+```text
+Qwen Review candidate_facts
+          │ frozen into approved Manuscript revision
+          v
+explicit Manuscript accept + transactional outbox
+          │
+          ├── Long-term Memory SQLite
+          ├── FAISS Vector
+          └── Temporal Event / Relation
+```
+
+一致性边界：
+
+- 只有最终 approved Workflow version 保存候选事实；未批准版本和未接受 Manuscript 不会回写。
+- Manuscript 接受指针与 outbox 在 `novels.db` 的同一个 `BEGIN IMMEDIATE` 事务内提交。
+- Memory、FAISS 与 Temporal Graph 不伪装成跨库原子事务，而是使用稳定 SHA-256 projection ID、逐 sink checkpoint、幂等 upsert、失败状态、显式 retry 和 startup recovery 达成最终一致。
+- 每条 Memory/Graph 记录保留 `manuscript:<chapter_id>:r<revision>:fact:<index>`，Graph source 还保存 accepted Manuscript ID、revision 与 chapter coordinate。
+- 接受替代 revision 时，旧事实先撤回再投影新事实；旧向量和 Memory 被移除，Graph 事实标记 retracted。transition 关闭的旧关系/状态区间会在撤回时恢复。
+- `CHARACTER_BELIEF` 不进入世界状态冲突；`CHARACTER_KNOWLEDGE` 保留 knowledge holder/knower metadata，并继续作为角色知识约束。
+
+API 新增：
+
+```text
+GET  /api/v1/novels/{novel_id}/manuscript/chapters/{chapter_id}/revisions/{revision}/fact-projection
+POST /api/v1/novels/{novel_id}/manuscript/chapters/{chapter_id}/revisions/{revision}/fact-projection/retry
+```
+
+接受响应同时返回 projection summary。失败的跨存储投影不回滚已提交的 Manuscript 接受；客户端可查询精确 sink checkpoint 并安全重试。retry 在执行前校验完整 novel/chapter/revision scope。
+
+自动化验证：
+
+```text
+19/19 Fact Projection focused tests passed
+19/19 Manuscript focused tests passed
+18/18 Consistency Engine focused tests passed
+18/18 Temporal Graph focused tests passed
+434/434 full regression passed in 118.183s
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+真实运行态验收创建并保留独立小说 `c561bb57-d151-4032-8a61-3abd8a144536`。真实 `qwen3:8b` Chapter Workflow 运行约 29.4 秒，使用 6768 tokens，Review 输出 2 个无冲突候选事实。正式 import/accept 后，2 个 outbox item 均在首次尝试完成 Memory、Vector 与 Graph checkpoint；融合检索为 `dual`，Vector/Graph lane 均为 `success`，并返回同一 accepted Manuscript provenance。
+
+显式 retry 与后端重启后 attempts 仍为 1、Event/Relation revision rows 仍为 1，证明 completed 投影没有重复写入。错误 novel scope 的 retry 返回 HTTP 404。验收记录保存在 `data/sprint08d3_acceptance.json`；既有数据库与历史验收数据均未删除。下一项为 Sprint 08E Vue 创作工作台。

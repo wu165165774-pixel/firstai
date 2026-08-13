@@ -19,6 +19,7 @@ from app.config.settings import settings
 from app.core.exception_handler import novelforge_exception_handler
 from app.core.exceptions import NovelForgeException
 from app.core.middleware import RequestLogMiddleware
+from app.fact_projection.service import fact_projection_service
 from app.rag.consistency import memory_index_consistency_service
 from app.knowledge.manager import external_knowledge_manager
 
@@ -66,12 +67,26 @@ async def lifespan(app: FastAPI):
             "Backend will continue using authoritative SQLite data."
         )
 
+    try:
+        recovered = await fact_projection_service.recover_incomplete(
+            limit=1000
+        )
+        logger.info(
+            "Accepted fact projection startup recovery complete: "
+            f"processed={recovered}"
+        )
+    except Exception:
+        logger.exception(
+            "Unexpected accepted fact projection recovery failure. "
+            "Backend will continue; pending projections remain retryable."
+        )
+
     yield
 
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.27",
+    version="0.15.0-alpha.28",
     lifespan=lifespan,
 )
 

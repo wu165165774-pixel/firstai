@@ -4,6 +4,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.consistency.schemas import ConsistencyFactCandidate
+from app.fact_projection.schemas import FactProjectionSummary
+
 
 ManuscriptSourceStage = Literal[
     "draft",
@@ -69,6 +72,10 @@ class ManuscriptRevision(BaseModel):
     source_story_arc_revision: int
     source_chapter_plan_id: str
     source_chapter_plan_revision: int
+    candidate_facts: list[ConsistencyFactCandidate] = Field(
+        default_factory=list,
+        max_length=200,
+    )
     is_accepted: bool = False
     created_at: str
 
@@ -97,6 +104,7 @@ class ManuscriptAcceptResult(BaseModel):
     chapter: ManuscriptChapter
     accepted_revision: ManuscriptRevision
     changed: bool = True
+    fact_projection: FactProjectionSummary | None = None
 
 
 class ManuscriptChapterResponse(BaseModel):

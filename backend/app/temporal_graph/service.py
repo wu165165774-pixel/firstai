@@ -294,6 +294,33 @@ class TemporalGraphService:
         )
 
     @staticmethod
+    def _knowledge_scope(metadata: dict) -> str:
+        value = str(metadata.get("knowledge_scope") or "WORLD_TRUTH")
+        if value not in {
+            "WORLD_TRUTH",
+            "CHARACTER_KNOWLEDGE",
+            "CHARACTER_BELIEF",
+            "READER_KNOWLEDGE",
+        }:
+            return "WORLD_TRUTH"
+        return value
+
+    @staticmethod
+    def _knowers(metadata: dict) -> list[str]:
+        values = metadata.get("knower_entity_ids", [])
+        if not values and metadata.get("knowledge_holder_entity_id"):
+            values = [metadata["knowledge_holder_entity_id"]]
+        if not isinstance(values, list):
+            return []
+        return list(
+            dict.fromkeys(
+                str(value).strip()
+                for value in values
+                if str(value).strip()
+            )
+        )[:100]
+
+    @staticmethod
     def _lexical_score(content: str, terms: list[str]) -> float:
         if not terms:
             return 0.0
@@ -342,6 +369,7 @@ class TemporalGraphService:
         active = set(payload.active_entity_ids)
         evidence: list[TemporalGraphEvidence] = []
         for event in events:
+            knowledge_scope = self._knowledge_scope(event.metadata)
             names = [entity_name(item) for item in event.participant_entity_ids]
             if event.location_entity_id:
                 names.append(entity_name(event.location_entity_id))
@@ -350,6 +378,8 @@ class TemporalGraphService:
                 content += f"（涉及：{'、'.join(names)}）"
             if event.summary:
                 content += f"：{event.summary}"
+            if knowledge_scope != "WORLD_TRUTH":
+                content = f"[{knowledge_scope}] {content}"
             overlap = len(active.intersection(event.participant_entity_ids))
             if event.location_entity_id in active:
                 overlap += 1
@@ -381,16 +411,21 @@ class TemporalGraphService:
                     source=event.source,
                     metadata={
                         "event_type": event.event_type,
+                        "knowledge_scope": knowledge_scope,
+                        "knower_entity_ids": self._knowers(event.metadata),
                         "revision": event.revision,
                     },
                 )
             )
         for relation in relations:
+            knowledge_scope = self._knowledge_scope(relation.metadata)
             subject_name = entity_name(relation.subject_entity_id)
             object_name = entity_name(relation.object_entity_id)
             content = f"{subject_name} —{relation.predicate}→ {object_name}"
             if relation.description:
                 content += f"：{relation.description}"
+            if knowledge_scope != "WORLD_TRUTH":
+                content = f"[{knowledge_scope}] {content}"
             overlap = len(
                 active.intersection(
                     {relation.subject_entity_id, relation.object_entity_id}
@@ -416,6 +451,8 @@ class TemporalGraphService:
                     source=relation.source,
                     metadata={
                         "predicate": relation.predicate,
+                        "knowledge_scope": knowledge_scope,
+                        "knower_entity_ids": self._knowers(relation.metadata),
                         "revision": relation.revision,
                     },
                 )

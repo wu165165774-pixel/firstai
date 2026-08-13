@@ -487,6 +487,9 @@ class TemporalGraphStorage:
     ) -> list[TemporalEvent]:
         clauses = ["e.novel_id = ?"]
         params: list[Any] = [novel_id]
+        clauses.append(
+            "COALESCE(json_extract(e.metadata_json, '$.retracted'), 0) = 0"
+        )
         if as_of_chapter is not None:
             clauses.append("e.start_chapter <= ?")
             params.append(as_of_chapter)
@@ -721,6 +724,9 @@ class TemporalGraphStorage:
     ) -> list[TemporalRelation]:
         clauses = ["novel_id = ?"]
         params: list[Any] = [novel_id]
+        clauses.append(
+            "COALESCE(json_extract(metadata_json, '$.retracted'), 0) = 0"
+        )
         if as_of_chapter is not None:
             clauses.append("valid_from_chapter <= ?")
             params.append(as_of_chapter)

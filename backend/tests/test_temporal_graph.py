@@ -229,6 +229,38 @@ class TemporalGraphStorageTests(TemporalGraphFixture):
             [],
         )
 
+    def test_retracted_graph_fact_is_hidden_from_all_query_modes(self) -> None:
+        relation = self.create_relation()
+        self.service.update_relation(
+            self.novel_id,
+            relation.relation_id,
+            TemporalRelationUpdate(
+                expected_revision=relation.revision,
+                source=self.manuscript_source(),
+                metadata={"retracted": True},
+            ),
+        )
+
+        self.assertEqual(
+            self.service.list_relations(
+                self.novel_id,
+                as_of_chapter=5,
+            ),
+            [],
+        )
+        self.assertEqual(
+            self.service.list_relations(
+                self.novel_id,
+                as_of_chapter=5,
+                include_historical=True,
+            ),
+            [],
+        )
+        detail = self.service.get_relation(
+            self.novel_id, relation.relation_id
+        )
+        self.assertTrue(detail.metadata["retracted"])
+
     def test_active_entity_filter_uses_participant_table(self) -> None:
         self.create_event()
         self.create_relation()
@@ -247,6 +279,31 @@ class TemporalGraphStorageTests(TemporalGraphFixture):
                 include_historical=True,
             ),
             [],
+        )
+
+    def test_query_labels_character_belief_scope(self) -> None:
+        self.create_relation(
+            metadata={
+                "knowledge_scope": "CHARACTER_BELIEF",
+                "knower_entity_ids": ["char_lan"],
+            }
+        )
+        result = self.service.query(
+            self.novel_id,
+            TemporalGraphQueryRequest(
+                query="敌对",
+                active_entity_ids=["char_lan", "char_qi"],
+                as_of_chapter=5,
+            ),
+        )
+
+        self.assertEqual(len(result.evidence), 1)
+        self.assertTrue(
+            result.evidence[0].content.startswith("[CHARACTER_BELIEF]")
+        )
+        self.assertEqual(
+            result.evidence[0].metadata["knower_entity_ids"],
+            ["char_lan"],
         )
 
     def test_update_is_revision_guarded_and_snapshots_are_append_only(self) -> None:

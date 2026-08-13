@@ -3,6 +3,15 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.28
+
+- Froze reviewed candidate facts into immutable Manuscript revisions and atomically enqueued projection outbox items only when an approved revision was explicitly accepted.
+- Added idempotent, checkpointed projection into Long-term Memory, FAISS Vector, and Temporal Graph with exact accepted-Manuscript provenance.
+- Added retry, startup recovery, failed-sink repair, and safe retraction/reactivation when an accepted Manuscript revision is replaced or selected again.
+- Added chapter-valid relationship, life-state, and location transition handling while keeping character belief isolated from world-state constraints.
+- Added fact-projection status/retry APIs with strict novel/chapter/revision scope validation.
+- Added real `qwen3:8b` Workflow-to-Manuscript acceptance, dual-lane retrieval, restart persistence, and 434-test regression coverage.
+
 ## v0.15.0-alpha.27
 
 - Added bounded, provenance-preserving pre-writing constraints from Project, Story Bible, Canonical Entity Registry, and chapter-valid Temporal Graph state.

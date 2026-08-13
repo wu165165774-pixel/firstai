@@ -4,6 +4,7 @@ import hashlib
 
 from typing import Any
 
+from app.fact_projection.schemas import FactProjectionSummary
 from app.workflows.storage import WorkflowRunStorage
 
 from .schemas import (
@@ -120,6 +121,26 @@ class ManuscriptService:
 
         quality_scores = result.get("quality_scores") or {}
         review_report = result.get("review_report") or {}
+        unresolved_conflicts = [
+            item
+            for item in (result.get("consistency_conflicts") or [])
+            if item.get("blocking", True) and item.get("status") == "confirmed"
+        ]
+        if unresolved_conflicts:
+            raise ManuscriptConflictError(
+                "Workflow Run contains unresolved blocking consistency conflicts."
+            )
+        candidate_facts = review_report.get("candidate_facts") or []
+        for fact in candidate_facts:
+            fact_chapter = fact.get("chapter_number")
+            if (
+                fact_chapter is not None
+                and int(fact_chapter) != int(metadata["chapter_number"])
+            ):
+                raise ManuscriptConflictError(
+                    "Workflow candidate fact chapter does not match its "
+                    "grounded Chapter Plan coordinate."
+                )
         versions = []
         for index, version in enumerate(workflow_versions):
             source_stage = version.get("source_stage")
@@ -145,6 +166,9 @@ class ManuscriptService:
                         str(review_report.get("summary") or "")
                         if approved
                         else ""
+                    ),
+                    "candidate_facts": (
+                        candidate_facts if approved else []
                     ),
                 }
             )
@@ -249,4 +273,24 @@ class ManuscriptService:
             novel_id,
             manuscript_chapter_id,
             revision,
+        )
+
+    def get_fact_projection(
+        self,
+        novel_id: str,
+        manuscript_chapter_id: str,
+        revision: int,
+    ) -> FactProjectionSummary:
+        return self.storage.get_fact_projection(
+            novel_id,
+            manuscript_chapter_id,
+            revision,
+        )
+
+    def has_incomplete_fact_projections(
+        self,
+        manuscript_chapter_id: str,
+    ) -> bool:
+        return self.storage.has_incomplete_fact_projections(
+            manuscript_chapter_id
         )

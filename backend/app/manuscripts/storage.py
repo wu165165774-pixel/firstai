@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sqlite3
 import uuid
@@ -9,6 +10,12 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from app.consistency.schemas import ConsistencyFactCandidate
+from app.fact_projection.schemas import (
+    FactProjectionItem,
+    FactProjectionSummary,
+)
 
 from .schemas import (
     ManuscriptAcceptResult,
@@ -115,6 +122,7 @@ class ManuscriptStorage:
                     source_story_arc_revision INTEGER NOT NULL,
                     source_chapter_plan_id TEXT NOT NULL,
                     source_chapter_plan_revision INTEGER NOT NULL,
+                    candidate_facts_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(manuscript_chapter_id, revision),
                     FOREIGN KEY(manuscript_chapter_id)
@@ -134,6 +142,99 @@ class ManuscriptStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_manuscript_revisions_run
                 ON manuscript_revisions(source_workflow_run_id, revision);
+
+                CREATE TABLE IF NOT EXISTS manuscript_fact_projections (
+                    projection_id TEXT PRIMARY KEY,
+                    novel_id TEXT NOT NULL,
+                    manuscript_chapter_id TEXT NOT NULL,
+                    manuscript_revision INTEGER NOT NULL,
+                    chapter_number INTEGER NOT NULL,
+                    fact_index INTEGER NOT NULL,
+                    fact_id TEXT NOT NULL,
+                    fact_json TEXT NOT NULL,
+                    operation TEXT NOT NULL DEFAULT 'project',
+                    superseded_by_revision INTEGER,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    memory_id TEXT,
+                    memory_projected INTEGER NOT NULL DEFAULT 0,
+                    vector_projected INTEGER NOT NULL DEFAULT 0,
+                    graph_kind TEXT,
+                    graph_id TEXT,
+                    graph_projected INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY(manuscript_chapter_id, manuscript_revision)
+                        REFERENCES manuscript_revisions(
+                            manuscript_chapter_id, revision
+                        ) ON DELETE CASCADE,
+                    UNIQUE(
+                        manuscript_chapter_id,
+                        manuscript_revision,
+                        fact_index
+                    ),
+                    CHECK (operation IN ('project', 'retract')),
+                    CHECK (
+                        status IN (
+                            'pending', 'processing', 'completed', 'failed'
+                        )
+                    ),
+                    CHECK (
+                        graph_kind IS NULL
+                        OR graph_kind IN ('event', 'relation')
+                    )
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_fact_projections_status
+                ON manuscript_fact_projections(status, updated_at);
+
+                CREATE INDEX IF NOT EXISTS idx_fact_projections_revision
+                ON manuscript_fact_projections(
+                    novel_id, manuscript_chapter_id,
+                    manuscript_revision, fact_index
+                );
+
+                """
+            )
+            columns = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(manuscript_revisions)"
+                ).fetchall()
+            }
+            if "candidate_facts_json" not in columns:
+                conn.execute(
+                    "ALTER TABLE manuscript_revisions "
+                    "ADD COLUMN candidate_facts_json TEXT "
+                    "NOT NULL DEFAULT '[]'"
+                )
+            projection_columns = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(manuscript_fact_projections)"
+                ).fetchall()
+            }
+            if "operation" not in projection_columns:
+                conn.execute(
+                    "ALTER TABLE manuscript_fact_projections "
+                    "ADD COLUMN operation TEXT NOT NULL DEFAULT 'project'"
+                )
+            if "superseded_by_revision" not in projection_columns:
+                conn.execute(
+                    "ALTER TABLE manuscript_fact_projections "
+                    "ADD COLUMN superseded_by_revision INTEGER"
+                )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_fact_projections_replacement
+                ON manuscript_fact_projections(
+                    manuscript_chapter_id,
+                    superseded_by_revision,
+                    operation,
+                    status
+                )
                 """
             )
             conn.commit()
@@ -199,9 +300,580 @@ class ManuscriptStorage:
             source_chapter_plan_revision=int(
                 row["source_chapter_plan_revision"]
             ),
+            candidate_facts=[
+                ConsistencyFactCandidate.model_validate(item)
+                for item in _json_load(
+                    row["candidate_facts_json"]
+                    if "candidate_facts_json" in row.keys()
+                    else None,
+                    [],
+                )
+            ],
             is_accepted=(accepted_revision == revision),
             created_at=row["created_at"],
         )
+
+    @staticmethod
+    def _projection_from_row(row: sqlite3.Row) -> FactProjectionItem:
+        return FactProjectionItem(
+            projection_id=row["projection_id"],
+            novel_id=row["novel_id"],
+            manuscript_chapter_id=row["manuscript_chapter_id"],
+            manuscript_revision=int(row["manuscript_revision"]),
+            chapter_number=int(row["chapter_number"]),
+            fact_index=int(row["fact_index"]),
+            fact_id=row["fact_id"],
+            operation=(
+                row["operation"]
+                if "operation" in row.keys()
+                else "project"
+            ),
+            superseded_by_revision=(
+                int(row["superseded_by_revision"])
+                if "superseded_by_revision" in row.keys()
+                and row["superseded_by_revision"] is not None
+                else None
+            ),
+            status=row["status"],
+            attempts=int(row["attempts"]),
+            memory_id=row["memory_id"],
+            memory_projected=bool(row["memory_projected"]),
+            vector_projected=bool(row["vector_projected"]),
+            graph_kind=row["graph_kind"],
+            graph_id=row["graph_id"],
+            graph_projected=bool(row["graph_projected"]),
+            last_error=row["last_error"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            completed_at=row["completed_at"],
+        )
+
+    @classmethod
+    def _projection_rows(
+        cls,
+        conn: sqlite3.Connection,
+        novel_id: str,
+        manuscript_chapter_id: str,
+        manuscript_revision: int,
+    ) -> list[sqlite3.Row]:
+        return list(
+            conn.execute(
+                """
+                SELECT * FROM manuscript_fact_projections
+                WHERE novel_id = ? AND manuscript_chapter_id = ?
+                  AND (
+                      manuscript_revision = ?
+                      OR superseded_by_revision = ?
+                  )
+                ORDER BY CASE operation WHEN 'retract' THEN 0 ELSE 1 END,
+                         manuscript_revision ASC, fact_index ASC
+                """,
+                (
+                    novel_id,
+                    manuscript_chapter_id,
+                    manuscript_revision,
+                    manuscript_revision,
+                ),
+            ).fetchall()
+        )
+
+    @classmethod
+    def _projection_summary_from_rows(
+        cls,
+        novel_id: str,
+        manuscript_chapter_id: str,
+        manuscript_revision: int,
+        rows: list[sqlite3.Row],
+    ) -> FactProjectionSummary:
+        items = [cls._projection_from_row(row) for row in rows]
+        counts = {
+            status: sum(item.status == status for item in items)
+            for status in ("pending", "processing", "completed", "failed")
+        }
+        if not items:
+            overall = "completed"
+        elif counts["failed"]:
+            overall = "failed"
+        elif counts["processing"]:
+            overall = "processing"
+        elif counts["pending"]:
+            overall = "pending"
+        else:
+            overall = "completed"
+        return FactProjectionSummary(
+            novel_id=novel_id,
+            manuscript_chapter_id=manuscript_chapter_id,
+            manuscript_revision=manuscript_revision,
+            status=overall,
+            total_count=len(items),
+            pending_count=counts["pending"],
+            processing_count=counts["processing"],
+            completed_count=counts["completed"],
+            failed_count=counts["failed"],
+            items=items,
+        )
+
+    @staticmethod
+    def _projection_id(
+        manuscript_chapter_id: str,
+        manuscript_revision: int,
+        fact_index: int,
+        fact: ConsistencyFactCandidate,
+    ) -> str:
+        digest = hashlib.sha256(
+            (
+                f"{manuscript_chapter_id}|{manuscript_revision}|"
+                f"{fact_index}|"
+                + _json_dump(fact.model_dump(mode="json"))
+            ).encode("utf-8")
+        ).hexdigest()[:32]
+        return f"fp_{digest}"
+
+    def _enqueue_fact_projections(
+        self,
+        conn: sqlite3.Connection,
+        chapter_row: sqlite3.Row,
+        revision_row: sqlite3.Row,
+        now: str,
+    ) -> None:
+        facts = [
+            ConsistencyFactCandidate.model_validate(item)
+            for item in _json_load(
+                revision_row["candidate_facts_json"],
+                [],
+            )
+        ]
+        for fact_index, fact in enumerate(facts):
+            projection_id = self._projection_id(
+                revision_row["manuscript_chapter_id"],
+                int(revision_row["revision"]),
+                fact_index,
+                fact,
+            )
+            existing = conn.execute(
+                """
+                SELECT projection_id FROM manuscript_fact_projections
+                WHERE manuscript_chapter_id = ?
+                  AND manuscript_revision = ?
+                  AND fact_index = ?
+                """,
+                (
+                    revision_row["manuscript_chapter_id"],
+                    int(revision_row["revision"]),
+                    fact_index,
+                ),
+            ).fetchone()
+            if (
+                existing is not None
+                and existing["projection_id"] != projection_id
+            ):
+                raise ManuscriptConflictError(
+                    "Accepted fact outbox identity does not match its frozen "
+                    "Manuscript revision."
+                )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO manuscript_fact_projections (
+                    projection_id, novel_id, manuscript_chapter_id,
+                    manuscript_revision, chapter_number, fact_index,
+                    fact_id, fact_json, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (
+                    projection_id,
+                    revision_row["novel_id"],
+                    revision_row["manuscript_chapter_id"],
+                    int(revision_row["revision"]),
+                    int(chapter_row["chapter_number"]),
+                    fact_index,
+                    fact.fact_id or f"FACT-{fact_index + 1:03d}",
+                    _json_dump(fact.model_dump(mode="json")),
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE manuscript_fact_projections
+                SET operation = 'project', superseded_by_revision = NULL,
+                    status = 'pending', completed_at = NULL,
+                    last_error = '', memory_projected = 0,
+                    vector_projected = 0, graph_projected = 0,
+                    updated_at = ?
+                WHERE projection_id = ? AND operation = 'retract'
+                """,
+                (now, projection_id),
+            )
+
+    def _enqueue_fact_retractions(
+        self,
+        conn: sqlite3.Connection,
+        chapter_row: sqlite3.Row,
+        manuscript_revision: int,
+        superseded_by_revision: int,
+        now: str,
+    ) -> None:
+        revision_row = conn.execute(
+            """
+            SELECT * FROM manuscript_revisions
+            WHERE manuscript_chapter_id = ? AND revision = ?
+            """,
+            (chapter_row["manuscript_chapter_id"], manuscript_revision),
+        ).fetchone()
+        if revision_row is None:
+            return
+        self._enqueue_fact_projections(conn, chapter_row, revision_row, now)
+        conn.execute(
+            """
+            UPDATE manuscript_fact_projections
+            SET operation = 'retract', superseded_by_revision = ?,
+                status = 'pending', completed_at = NULL,
+                last_error = '', memory_projected = 0,
+                vector_projected = 0, graph_projected = 0,
+                updated_at = ?
+            WHERE manuscript_chapter_id = ?
+              AND manuscript_revision = ?
+            """,
+            (
+                superseded_by_revision,
+                now,
+                chapter_row["manuscript_chapter_id"],
+                manuscript_revision,
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE manuscript_fact_projections
+            SET superseded_by_revision = ?, status = 'pending',
+                completed_at = NULL, last_error = '',
+                graph_projected = 0, updated_at = ?
+            WHERE manuscript_chapter_id = ?
+              AND operation = 'retract'
+              AND status != 'completed'
+            """,
+            (
+                superseded_by_revision,
+                now,
+                chapter_row["manuscript_chapter_id"],
+            ),
+        )
+
+    def get_fact_projection(
+        self,
+        novel_id: str,
+        manuscript_chapter_id: str,
+        manuscript_revision: int,
+    ) -> FactProjectionSummary:
+        with self._connect() as conn:
+            chapter_row = self._chapter_row(
+                conn,
+                novel_id,
+                manuscript_chapter_id,
+            )
+            revision_row = conn.execute(
+                """
+                SELECT 1 FROM manuscript_revisions
+                WHERE novel_id = ? AND manuscript_chapter_id = ?
+                  AND revision = ?
+                """,
+                (novel_id, manuscript_chapter_id, manuscript_revision),
+            ).fetchone()
+            if revision_row is None:
+                raise ManuscriptNotFoundError(
+                    "Manuscript Revision not found: "
+                    f"{manuscript_chapter_id}:{manuscript_revision}"
+                )
+            rows = self._projection_rows(
+                conn,
+                novel_id,
+                manuscript_chapter_id,
+                manuscript_revision,
+            )
+        return self._projection_summary_from_rows(
+            novel_id,
+            manuscript_chapter_id,
+            manuscript_revision,
+            list(rows),
+        )
+
+    def get_projection_status(
+        self,
+        projection_id: str,
+    ) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT status FROM manuscript_fact_projections
+                WHERE projection_id = ?
+                """,
+                (projection_id,),
+            ).fetchone()
+        if row is None:
+            raise ManuscriptNotFoundError(
+                f"Fact Projection not found: {projection_id}"
+            )
+        return str(row["status"])
+
+    def peek_fact_projection(
+        self,
+        projection_id: str,
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM manuscript_fact_projections
+                WHERE projection_id = ?
+                """,
+                (projection_id,),
+            ).fetchone()
+        if row is None:
+            raise ManuscriptNotFoundError(
+                f"Fact Projection not found: {projection_id}"
+            )
+        return dict(row)
+
+    def list_incomplete_fact_projection_ids(
+        self,
+        *,
+        manuscript_chapter_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[str]:
+        clauses = ["status IN ('pending', 'failed')"]
+        params: list[Any] = []
+        if manuscript_chapter_id is not None:
+            clauses.append("manuscript_chapter_id = ?")
+            params.append(manuscript_chapter_id)
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT projection_id FROM manuscript_fact_projections
+                WHERE {' AND '.join(clauses)}
+                ORDER BY CASE operation WHEN 'retract' THEN 0 ELSE 1 END,
+                         created_at ASC, fact_index ASC
+                {limit_sql}
+                """,
+                tuple(params),
+            ).fetchall()
+        return [str(row["projection_id"]) for row in rows]
+
+    def has_incomplete_fact_projections(
+        self,
+        manuscript_chapter_id: str,
+    ) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM manuscript_fact_projections
+                WHERE manuscript_chapter_id = ?
+                  AND status IN ('pending', 'failed')
+                LIMIT 1
+                """,
+                (manuscript_chapter_id,),
+            ).fetchone()
+        return row is not None
+
+    def recover_processing_fact_projections(self) -> int:
+        now = _utc_now()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE manuscript_fact_projections
+                SET status = 'failed',
+                    last_error = 'Projection interrupted before completion.',
+                    updated_at = ?
+                WHERE status = 'processing'
+                """,
+                (now,),
+            )
+            conn.commit()
+        return int(cursor.rowcount)
+
+    def claim_fact_projection(
+        self,
+        projection_id: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT * FROM manuscript_fact_projections
+                WHERE projection_id = ?
+                """,
+                (projection_id,),
+            ).fetchone()
+            if row is None:
+                raise ManuscriptNotFoundError(
+                    f"Fact Projection not found: {projection_id}"
+                )
+            if row["status"] in {"completed", "processing"}:
+                conn.commit()
+                return None
+            if row["operation"] == "project":
+                current_chapter = conn.execute(
+                    """
+                    SELECT accepted_revision FROM manuscript_chapters
+                    WHERE manuscript_chapter_id = ?
+                    """,
+                    (row["manuscript_chapter_id"],),
+                ).fetchone()
+                if (
+                    current_chapter is None
+                    or current_chapter["accepted_revision"] is None
+                    or int(current_chapter["accepted_revision"])
+                    != int(row["manuscript_revision"])
+                ):
+                    conn.execute(
+                        """
+                        UPDATE manuscript_fact_projections
+                        SET status = 'failed',
+                            last_error = ?, updated_at = ?
+                        WHERE projection_id = ?
+                        """,
+                        (
+                            "Projection source Manuscript revision is no "
+                            "longer accepted.",
+                            _utc_now(),
+                            projection_id,
+                        ),
+                    )
+                    conn.commit()
+                    return None
+                blocking_retraction = conn.execute(
+                    """
+                    SELECT 1 FROM manuscript_fact_projections
+                    WHERE manuscript_chapter_id = ?
+                      AND operation = 'retract'
+                      AND superseded_by_revision = ?
+                      AND status != 'completed'
+                    LIMIT 1
+                    """,
+                    (
+                        row["manuscript_chapter_id"],
+                        row["manuscript_revision"],
+                    ),
+                ).fetchone()
+                if blocking_retraction is not None:
+                    conn.commit()
+                    return None
+            else:
+                current_chapter = conn.execute(
+                    """
+                    SELECT accepted_revision FROM manuscript_chapters
+                    WHERE manuscript_chapter_id = ?
+                    """,
+                    (row["manuscript_chapter_id"],),
+                ).fetchone()
+                if (
+                    current_chapter is None
+                    or row["superseded_by_revision"] is None
+                    or current_chapter["accepted_revision"] is None
+                    or int(current_chapter["accepted_revision"])
+                    != int(row["superseded_by_revision"])
+                ):
+                    conn.execute(
+                        """
+                        UPDATE manuscript_fact_projections
+                        SET status = 'failed',
+                            last_error = ?, updated_at = ?
+                        WHERE projection_id = ?
+                        """,
+                        (
+                            "Fact retraction replacement Manuscript revision "
+                            "is no longer accepted.",
+                            _utc_now(),
+                            projection_id,
+                        ),
+                    )
+                    conn.commit()
+                    return None
+            now = _utc_now()
+            conn.execute(
+                """
+                UPDATE manuscript_fact_projections
+                SET status = 'processing', attempts = attempts + 1,
+                    last_error = '', updated_at = ?
+                WHERE projection_id = ?
+                """,
+                (now, projection_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT p.*, r.content
+                FROM manuscript_fact_projections AS p
+                JOIN manuscript_revisions AS r
+                  ON r.manuscript_chapter_id = p.manuscript_chapter_id
+                 AND r.revision = p.manuscript_revision
+                WHERE p.projection_id = ?
+                """,
+                (projection_id,),
+            ).fetchone()
+            conn.commit()
+        value = dict(updated)
+        value["fact"] = ConsistencyFactCandidate.model_validate(
+            _json_load(value.pop("fact_json"), {})
+        )
+        return value
+
+    def update_fact_projection(
+        self,
+        projection_id: str,
+        *,
+        memory_id: str | None = None,
+        memory_projected: bool | None = None,
+        vector_projected: bool | None = None,
+        graph_kind: str | None = None,
+        graph_id: str | None = None,
+        graph_projected: bool | None = None,
+        completed: bool = False,
+        error: str | None = None,
+        expected_operation: str | None = None,
+    ) -> None:
+        assignments = ["updated_at = ?"]
+        values: list[Any] = [_utc_now()]
+        for column, value in (
+            ("memory_id", memory_id),
+            ("memory_projected", memory_projected),
+            ("vector_projected", vector_projected),
+            ("graph_kind", graph_kind),
+            ("graph_id", graph_id),
+            ("graph_projected", graph_projected),
+        ):
+            if value is None:
+                continue
+            assignments.append(f"{column} = ?")
+            values.append(int(value) if isinstance(value, bool) else value)
+        if completed:
+            assignments.extend(
+                ["status = 'completed'", "completed_at = ?", "last_error = ''"]
+            )
+            values.append(_utc_now())
+        elif error is not None:
+            assignments.extend(["status = 'failed'", "last_error = ?"])
+            values.append(str(error)[:8000])
+        values.append(projection_id)
+        where = "projection_id = ?"
+        if expected_operation is not None:
+            where += " AND operation = ?"
+            values.append(expected_operation)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE manuscript_fact_projections
+                SET {', '.join(assignments)}
+                WHERE {where}
+                """,
+                tuple(values),
+            )
+            if cursor.rowcount != 1:
+                raise ManuscriptConflictError(
+                    "Fact Projection operation changed while processing: "
+                    f"{projection_id}"
+                )
+            conn.commit()
 
     @staticmethod
     def _planning_row(
@@ -495,10 +1167,11 @@ class ManuscriptStorage:
                         source_story_arc_revision,
                         source_chapter_plan_id,
                         source_chapter_plan_revision,
+                        candidate_facts_json,
                         created_at
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -521,6 +1194,7 @@ class ManuscriptStorage:
                         int(candidate["source_story_arc_revision"]),
                         candidate["chapter_plan_id"],
                         int(candidate["source_chapter_plan_revision"]),
+                        _json_dump(version["candidate_facts"]),
                         now,
                     ),
                 )
@@ -606,6 +1280,12 @@ class ManuscriptStorage:
                 )
 
             if chapter_row["accepted_revision"] == revision:
+                projection_rows = self._projection_rows(
+                    conn,
+                    novel_id,
+                    manuscript_chapter_id,
+                    revision,
+                )
                 conn.commit()
                 return ManuscriptAcceptResult(
                     chapter=self._chapter_from_row(chapter_row),
@@ -614,6 +1294,26 @@ class ManuscriptStorage:
                         accepted_revision=revision,
                     ),
                     changed=False,
+                    fact_projection=self._projection_summary_from_rows(
+                        novel_id,
+                        manuscript_chapter_id,
+                        revision,
+                        list(projection_rows),
+                    ),
+                )
+
+            processing = conn.execute(
+                """
+                SELECT projection_id FROM manuscript_fact_projections
+                WHERE manuscript_chapter_id = ? AND status = 'processing'
+                LIMIT 1
+                """,
+                (manuscript_chapter_id,),
+            ).fetchone()
+            if processing is not None:
+                raise ManuscriptConflictError(
+                    "A fact projection is currently processing for this "
+                    "Manuscript Chapter; retry acceptance after it finishes."
                 )
 
             expected = {
@@ -644,6 +1344,22 @@ class ManuscriptStorage:
             )
 
             now = _utc_now()
+            previous_accepted_revision = (
+                int(chapter_row["accepted_revision"])
+                if chapter_row["accepted_revision"] is not None
+                else None
+            )
+            if (
+                previous_accepted_revision is not None
+                and previous_accepted_revision != revision
+            ):
+                self._enqueue_fact_retractions(
+                    conn,
+                    chapter_row,
+                    previous_accepted_revision,
+                    revision,
+                    now,
+                )
             conn.execute(
                 """
                 UPDATE manuscript_chapters
@@ -661,6 +1377,18 @@ class ManuscriptStorage:
                 novel_id,
                 manuscript_chapter_id,
             )
+            self._enqueue_fact_projections(
+                conn,
+                chapter_row,
+                revision_row,
+                now,
+            )
+            projection_rows = self._projection_rows(
+                conn,
+                novel_id,
+                manuscript_chapter_id,
+                revision,
+            )
             conn.commit()
 
         return ManuscriptAcceptResult(
@@ -670,6 +1398,12 @@ class ManuscriptStorage:
                 accepted_revision=revision,
             ),
             changed=True,
+            fact_projection=self._projection_summary_from_rows(
+                novel_id,
+                manuscript_chapter_id,
+                revision,
+                list(projection_rows),
+            ),
         )
 
     def list_chapters(

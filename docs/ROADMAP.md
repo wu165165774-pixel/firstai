@@ -32,13 +32,13 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.26
+v0.15.0-alpha.27
 ```
 
 当前已验收、待发布目标：
 
 ```text
-v0.15.0-alpha.27 — Sprint 08D.2 Consistency Engine
+v0.15.0-alpha.28 — Sprint 08D.3 Accepted Fact Projection
 ```
 
 已完成的主干能力：
@@ -61,11 +61,12 @@ v0.15.0-alpha.27 — Sprint 08D.2 Consistency Engine
 - Temporal Graph 使用独立 SQLite 权威库持久化事件、关系、章节有效区间和不可变来源 revision，并通过真实 Graph Provider 接入双路检索。
 - Consistency Engine 从 Project/Bible/Canon/Temporal Graph 构建有预算的写作前约束，使用 Qwen 抽取候选事实，再以确定性规则阻断身份、关系、生死、地点、时间线、证据和知识范围冲突。
 - Chapter Workflow 已形成约束注入、Review 候选事实、确定性冲突、Rewrite 修复和 Re-review 复检闭环；候选事实保持不写回。
+- Approved Workflow 候选事实随 Manuscript revision 冻结，只有显式接受才在同一事务写入 outbox；Memory、FAISS 与 Temporal Graph 通过稳定 ID、逐 sink checkpoint、retry、启动恢复和旧 revision 撤回实现可审计的最终一致回写。
 
 下一开发项：
 
 ```text
-Sprint 08D.3 - Graph/Vector 融合与事实回写
+Sprint 08E - Vue 创作工作台
 状态：待开发
 ```
 
@@ -83,8 +84,8 @@ Sprint 08D.3 - Graph/Vector 融合与事实回写
 | 08C.2 | 外部知识库 | 已完成 | 小说内容库与外部知识库物理/逻辑隔离，引用来源可追踪 |
 | 08C.3 | 双路并行检索 | 已完成 | Temporal/Graph 与 Vector RAG 并行，结果融合、去重、预算和降级可测 |
 | 08D.1 | Temporal Graph 基础 | 已完成 | 角色、地点、事件、关系、时间有效区间与来源 revision 可持久化 |
-| 08D.2 | Consistency Engine | 已完成，待发布 | 写作前约束、写作后事实抽取、冲突检测、审核修复形成闭环 |
-| 08D.3 | Graph/Vector 融合与事实回写 | 待开发 | 新正文接受后原子/幂等地更新记忆、向量和图事实 |
+| 08D.2 | Consistency Engine | 已完成 | 写作前约束、写作后事实抽取、冲突检测、审核修复形成闭环 |
+| 08D.3 | Graph/Vector 融合与事实回写 | 已完成，待发布 | 新正文接受后原子入队，并幂等、可恢复地更新记忆、向量和图事实 |
 | 08E | Vue 创作工作台 | 待开发 | Project/Bible/Plan/Arc/Chapter/Workflow/Review/Manuscript 可视化操作闭环 |
 | 09 | Provider、Prompt、鉴权与发布工程 | 待开发 | OpenAI/Claude/DashScope、Prompt 版本、Auth、CI、迁移、备份与导出可验收 |
 | 1.0 | 插件化与正式发布 | 待开发 | 插件边界、兼容策略、安装/禁用、升级和完整产品验收完成 |

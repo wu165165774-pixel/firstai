@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.fact_projection.schemas import FactProjectionResponse
+from app.fact_projection.service import fact_projection_service
 from app.manuscripts.schemas import (
     ManuscriptAcceptRequest,
     ManuscriptAcceptResponse,
@@ -21,6 +23,7 @@ from app.manuscripts.storage import (
 
 router = APIRouter(prefix="/novels")
 service = ManuscriptService()
+projection_service = fact_projection_service
 
 
 def _not_found(exc: Exception) -> HTTPException:
@@ -152,4 +155,53 @@ async def accept_manuscript_revision(
         raise _not_found(exc) from exc
     except ManuscriptConflictError as exc:
         raise _conflict(exc) from exc
+    if service.has_incomplete_fact_projections(manuscript_chapter_id):
+        await projection_service.project_chapter(manuscript_chapter_id)
+        result.fact_projection = service.get_fact_projection(
+            novel_id,
+            manuscript_chapter_id,
+            revision,
+        )
     return ManuscriptAcceptResponse(data=result)
+
+
+@router.get(
+    "/{novel_id}/manuscript/chapters/{manuscript_chapter_id}"
+    "/revisions/{revision}/fact-projection",
+    response_model=FactProjectionResponse,
+)
+async def get_manuscript_fact_projection(
+    novel_id: str,
+    manuscript_chapter_id: str,
+    revision: int,
+) -> FactProjectionResponse:
+    try:
+        result = service.get_fact_projection(
+            novel_id,
+            manuscript_chapter_id,
+            revision,
+        )
+    except ManuscriptNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return FactProjectionResponse(data=result)
+
+
+@router.post(
+    "/{novel_id}/manuscript/chapters/{manuscript_chapter_id}"
+    "/revisions/{revision}/fact-projection/retry",
+    response_model=FactProjectionResponse,
+)
+async def retry_manuscript_fact_projection(
+    novel_id: str,
+    manuscript_chapter_id: str,
+    revision: int,
+) -> FactProjectionResponse:
+    try:
+        result = await projection_service.project_revision(
+            novel_id,
+            manuscript_chapter_id,
+            revision,
+        )
+    except ManuscriptNotFoundError as exc:
+        raise _not_found(exc) from exc
+    return FactProjectionResponse(data=result)

@@ -200,6 +200,8 @@ class ConsistencyEngine:
     @staticmethod
     def _knowers(metadata: dict[str, Any]) -> list[str]:
         values = metadata.get("knower_entity_ids", [])
+        if not values and metadata.get("knowledge_holder_entity_id"):
+            values = [metadata["knowledge_holder_entity_id"]]
         if not isinstance(values, list):
             return []
         return list(
@@ -744,7 +746,13 @@ class ConsistencyEngine:
                     )
                 )
 
-        if fact.fact_type == "relationship" and obj is not None:
+        checks_world_state = fact.knowledge_scope != "CHARACTER_BELIEF"
+
+        if (
+            fact.fact_type == "relationship"
+            and obj is not None
+            and checks_world_state
+        ):
             relations = self.temporal_storage.list_relations(
                 novel_id,
                 active_entity_ids=[subject.entity_id, obj.entity_id],
@@ -756,14 +764,18 @@ class ConsistencyEngine:
             relevant = [
                 item
                 for item in relations
-                if (
-                    item.subject_entity_id == subject.entity_id
-                    and item.object_entity_id == obj.entity_id
-                )
-                or (
-                    candidate_group in {"ally", "hostile"}
-                    and item.subject_entity_id == obj.entity_id
-                    and item.object_entity_id == subject.entity_id
+                if self._scope_from_metadata(item.metadata)
+                != "CHARACTER_BELIEF"
+                and (
+                    (
+                        item.subject_entity_id == subject.entity_id
+                        and item.object_entity_id == obj.entity_id
+                    )
+                    or (
+                        candidate_group in {"ally", "hostile"}
+                        and item.subject_entity_id == obj.entity_id
+                        and item.object_entity_id == subject.entity_id
+                    )
                 )
             ]
             for relation in relevant:
@@ -780,7 +792,10 @@ class ConsistencyEngine:
                             fact,
                             conflict_type="relationship_conflict",
                             severity="major",
-                            message="Generated relationship contradicts current Graph state.",
+                            message=(
+                                "Generated relationship contradicts current "
+                                "Graph state."
+                            ),
                             expected=relation.predicate,
                             generated=fact.predicate,
                             recommendation=(
@@ -801,7 +816,7 @@ class ConsistencyEngine:
                     )
                     break
 
-        if fact.fact_type == "life_state":
+        if fact.fact_type == "life_state" and checks_world_state:
             candidate_state = self._life_state(fact.value)
             events = self.temporal_storage.list_events(
                 novel_id,
@@ -811,6 +826,11 @@ class ConsistencyEngine:
                 limit=self.CONSTRAINT_SCAN_LIMIT,
             )
             for event in events:
+                if (
+                    self._scope_from_metadata(event.metadata)
+                    == "CHARACTER_BELIEF"
+                ):
+                    continue
                 existing_state = self._event_life_state(event)
                 if (
                     candidate_state
@@ -823,12 +843,15 @@ class ConsistencyEngine:
                             fact,
                             conflict_type="life_state_conflict",
                             severity="critical",
-                            message="Generated life state contradicts current Graph state.",
+                            message=(
+                                "Generated life state contradicts current "
+                                "Graph state."
+                            ),
                             expected=existing_state,
                             generated=candidate_state,
                             recommendation=(
-                                "Preserve the current life state or explicitly establish "
-                                "and review a state transition."
+                                "Preserve the current life state or explicitly "
+                                "establish and review a state transition."
                             ),
                             entity_ids=[subject.entity_id],
                             evidence=[
@@ -857,53 +880,59 @@ class ConsistencyEngine:
                         entity_ids=[subject.entity_id, obj.entity_id],
                     )
                 )
-            events = self.temporal_storage.list_events(
-                novel_id,
-                active_entity_ids=[subject.entity_id],
-                as_of_chapter=chapter_number,
-                include_historical=False,
-                limit=self.CONSTRAINT_SCAN_LIMIT,
-            )
-            locations = [
-                event
-                for event in events
-                if subject.entity_id in event.participant_entity_ids
-                and event.location_entity_id
-                and event.location_entity_id != obj.entity_id
-                and (
-                    self._normalize(event.event_type)
-                    in {"location", "located_at", "位置", "所在地"}
-                    or event.metadata.get("state_type") == "location"
+            if checks_world_state:
+                events = self.temporal_storage.list_events(
+                    novel_id,
+                    active_entity_ids=[subject.entity_id],
+                    as_of_chapter=chapter_number,
+                    include_historical=False,
+                    limit=self.CONSTRAINT_SCAN_LIMIT,
                 )
-            ]
-            if locations and not explicit_transition:
-                event = locations[0]
-                conflicts.append(
-                    self._conflict(
-                        fact,
-                        conflict_type="location_conflict",
-                        severity="major",
-                        message="Generated location contradicts current Graph state.",
-                        expected=str(event.location_entity_id),
-                        generated=obj.entity_id,
-                        recommendation=(
-                            "Keep the current location or show an explicit movement."
-                        ),
-                        entity_ids=[
-                            subject.entity_id,
-                            str(event.location_entity_id),
-                            obj.entity_id,
-                        ],
-                        evidence=[
-                            ConsistencySource(
-                                source_type="temporal_event",
-                                source_id=event.event_id,
-                                revision=event.revision,
-                                excerpt=event.summary or event.title,
-                            )
-                        ],
+                locations = [
+                    event
+                    for event in events
+                    if self._scope_from_metadata(event.metadata)
+                    != "CHARACTER_BELIEF"
+                    and subject.entity_id in event.participant_entity_ids
+                    and event.location_entity_id
+                    and event.location_entity_id != obj.entity_id
+                    and (
+                        self._normalize(event.event_type)
+                        in {"location", "located_at", "位置", "所在地"}
+                        or event.metadata.get("state_type") == "location"
                     )
-                )
+                ]
+                if locations and not explicit_transition:
+                    event = locations[0]
+                    conflicts.append(
+                        self._conflict(
+                            fact,
+                            conflict_type="location_conflict",
+                            severity="major",
+                            message=(
+                                "Generated location contradicts current Graph state."
+                            ),
+                            expected=str(event.location_entity_id),
+                            generated=obj.entity_id,
+                            recommendation=(
+                                "Keep the current location or show an explicit "
+                                "movement."
+                            ),
+                            entity_ids=[
+                                subject.entity_id,
+                                str(event.location_entity_id),
+                                obj.entity_id,
+                            ],
+                            evidence=[
+                                ConsistencySource(
+                                    source_type="temporal_event",
+                                    source_id=event.event_id,
+                                    revision=event.revision,
+                                    excerpt=event.summary or event.title,
+                                )
+                            ],
+                        )
+                    )
 
         if fact.knowledge_scope == "CHARACTER_KNOWLEDGE":
             holder = fact.knowledge_holder_entity_id
@@ -967,6 +996,7 @@ class ConsistencyEngine:
                     for item in constraints
                     if subject.entity_id in item.entity_ids
                     and (obj is None or obj.entity_id in item.entity_ids)
+                    and item.knowledge_scope != "CHARACTER_BELIEF"
                 ]
                 if not any(holder in item.knower_entity_ids for item in matching):
                     conflicts.append(
@@ -979,7 +1009,10 @@ class ConsistencyEngine:
                                 "The character is shown as knowing a fact not present "
                                 "in the character knowledge scope."
                             ),
-                            expected="Explicit character knowledge or an on-page learning transition",
+                            expected=(
+                                "Explicit character knowledge or an on-page "
+                                "learning transition"
+                            ),
                             generated=fact.evidence,
                             recommendation=(
                                 "Remove the knowledge, mark it as belief, or show how "

@@ -1,0 +1,107 @@
+{
+  "sprint": "08D.3",
+  "target_version": "v0.15.0-alpha.28",
+  "accepted_at": "2026-08-13T00:54:20.4790043+08:00",
+  "released": false,
+  "release_commit": null,
+  "scope": {
+    "user_id": "acceptance-08d3-d85958a2019f",
+    "novel_id": "c561bb57-d151-4032-8a61-3abd8a144536",
+    "marker": "08D3-EMBER-4072ab792dd0",
+    "chapter_number": 1,
+    "entity_ids": [
+      "char_lan_4072ab792dd0",
+      "char_qi_4072ab792dd0",
+      "loc_tower_4072ab792dd0"
+    ],
+    "data_retained": true
+  },
+  "real_qwen_workflow": {
+    "provider": "qwen_local",
+    "model": "qwen3:8b",
+    "run_id": "707bc1a1-1e92-4c79-bf4f-2d86fa6e2c34",
+    "execution_status": "succeeded",
+    "workflow_status": "completed",
+    "quality_gate_passed": true,
+    "candidate_fact_count": 2,
+    "consistency_conflict_count": 0,
+    "consistency_fact_persisted": false,
+    "prompt_tokens": 5089,
+    "completion_tokens": 1679,
+    "total_tokens": 6768,
+    "latency_ms": 29446.7810740025
+  },
+  "manuscript": {
+    "manuscript_chapter_id": "369abad3-2dec-4b2a-bd18-7615eefa8a79",
+    "revision": 1,
+    "content_hash": "1c4ec7cf97a7c424c6de8acd24fc50920b5f59fd2ea44a2a74da9f1efda6f8cc",
+    "candidate_facts_frozen": 2,
+    "accepted": true
+  },
+  "projection": {
+    "status": "completed",
+    "total_count": 2,
+    "completed_count": 2,
+    "failed_count": 0,
+    "projection_ids": [
+      "fp_ed2424875635e550ed2494f2b43806ee",
+      "fp_7cb54eb4f80e8a1adf9a329b04040d48"
+    ],
+    "memory_ids": [
+      "mem_fp_ed2424875635e550ed2494f2b43806ee",
+      "mem_fp_7cb54eb4f80e8a1adf9a329b04040d48"
+    ],
+    "graph_ids": [
+      "rel_fp_ed2424875635e550ed2494f2b43806ee",
+      "evt_fp_7cb54eb4f80e8a1adf9a329b04040d48"
+    ],
+    "attempts": [1, 1],
+    "all_memory_checkpoints": true,
+    "all_vector_checkpoints": true,
+    "all_graph_checkpoints": true
+  },
+  "provenance": {
+    "source_type": "accepted_manuscript",
+    "source_id": "369abad3-2dec-4b2a-bd18-7615eefa8a79",
+    "source_revision": 1,
+    "source_chapter_number": 1,
+    "source_references": [
+      "manuscript:369abad3-2dec-4b2a-bd18-7615eefa8a79:r1:fact:0",
+      "manuscript:369abad3-2dec-4b2a-bd18-7615eefa8a79:r1:fact:1"
+    ]
+  },
+  "fused_retrieval": {
+    "mode": "dual",
+    "degraded": false,
+    "vector_status": "success",
+    "graph_status": "success",
+    "vector_candidate_count": 2,
+    "graph_candidate_count": 2,
+    "evidence_count": 4,
+    "chars_used": 128
+  },
+  "idempotency_and_recovery": {
+    "explicit_retry_status": 200,
+    "attempts_after_retry": [1, 1],
+    "relation_revision_rows_after_retry": 1,
+    "event_revision_rows_after_retry": 1,
+    "attempts_after_restart": [1, 1],
+    "relation_revision_rows_after_restart": 1,
+    "event_revision_rows_after_restart": 1,
+    "retrieval_after_restart": true,
+    "wrong_novel_retry_status": 404
+  },
+  "verification": {
+    "fact_projection_tests": "19/19",
+    "manuscript_tests": "19/19",
+    "consistency_tests": "18/18",
+    "temporal_graph_tests": "18/18",
+    "full_regression": "434/434",
+    "full_regression_seconds": 118.183,
+    "python_compileall": true,
+    "docker_compose_config": true,
+    "git_diff_check": true,
+    "openapi_fact_projection_route_count": 2,
+    "online_version_after_final_restart": "0.15.0-alpha.28"
+  }
+}
