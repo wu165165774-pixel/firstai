@@ -3,6 +3,15 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.29
+
+- Added the Vue 3 creation workbench with user-scoped Project library, six-stage planning/production overview, and responsive desktop/mobile layouts.
+- Added Chapter Plan, Workflow Run, and whole-novel Orchestration operations without bypassing freshness, quality, or human acceptance gates.
+- Added Manuscript revision review, optimistic explicit acceptance, frozen fact display, per-sink projection checkpoints, and safe retry controls.
+- Added a typed frontend API client, deterministic helpers, API/pure-function tests, and single-process Vue bundle verification.
+- Added a reproducible Node/Vite-to-Nginx image, same-origin Backend proxy, SPA fallback, static caching, healthcheck, and Compose service on host port `18081`.
+- Verified the retained 08D.3 Project through the workbench API surface, production Docker runtime, 8 frontend tests, and 434 backend regression tests.
+
 ## v0.15.0-alpha.28
 
 - Froze reviewed candidate facts into immutable Manuscript revisions and atomically enqueued projection outbox items only when an approved revision was explicitly accepted.

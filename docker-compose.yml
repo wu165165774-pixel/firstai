@@ -2,6 +2,27 @@ name: novel-ai
 
 services:
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+    container_name: novelforge-frontend
+
+    ports:
+      - "18081:80"
+
+    depends_on:
+      - backend
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    restart: unless-stopped
+
   backend:
     build:
       context: D:\AI\novel-ai\backend
@@ -15,7 +36,6 @@ services:
       DEBUG: "true"
       QWEN_BASE_URL: http://ollama:11434
       QWEN_MODEL: qwen3:8b
-      environment:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_EMBEDDING_MODEL: qwen3-embedding:0.6b
       OLLAMA_EMBEDDING_DIMENSION: "1024"

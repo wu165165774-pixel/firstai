@@ -2823,3 +2823,33 @@ git diff --check passed
 真实运行态验收创建并保留独立小说 `c561bb57-d151-4032-8a61-3abd8a144536`。真实 `qwen3:8b` Chapter Workflow 运行约 29.4 秒，使用 6768 tokens，Review 输出 2 个无冲突候选事实。正式 import/accept 后，2 个 outbox item 均在首次尝试完成 Memory、Vector 与 Graph checkpoint；融合检索为 `dual`，Vector/Graph lane 均为 `success`，并返回同一 accepted Manuscript provenance。
 
 显式 retry 与后端重启后 attempts 仍为 1、Event/Relation revision rows 仍为 1，证明 completed 投影没有重复写入。错误 novel scope 的 retry 返回 HTTP 404。验收记录保存在 `data/sprint08d3_acceptance.json`；既有数据库与历史验收数据均未删除。下一项为 Sprint 08E Vue 创作工作台。
+
+## v0.15.0-alpha.29 — Sprint 08E.1 Vue 创作工作台基础
+
+NovelForge 已增加 Vue 3 创作工作台，将既有权威领域以只通过正式 API 的方式组成首个浏览器操作闭环：
+
+```text
+项目库 / 创作总览
+  -> Chapter Plan / Workflow / Orchestration
+  -> Manuscript candidate review + explicit accept
+  -> Fact Projection checkpoint + retry
+```
+
+工作台按 `user_id` 加载项目，展示 Project/Bible/Plan/Arc/Chapter/Manuscript 六段生产链及 revision/stale 状态。章节生产页展示规划地图、质量门通过的 Workflow 导入和全书任务控制；重复导入会读取 Run 的 Chapter Plan 绑定并携带当前 Manuscript optimistic revision。正文审核页选择不可变 revision，显式接受时携带聚合 revision；事实面板展示冻结事实和 Memory/Vector/Graph checkpoint，只允许查询或重试后端 outbox。
+
+生产部署新增 `novelforge-frontend`：Node 22 使用 lockfile 和 `npm ci` 构建，Nginx 1.27 在宿主 `18081` 提供 SPA、静态资源缓存、`/healthz` 和同源 `/api` Backend 代理。开发态 Vite 代理到宿主 `18080`。界面不依赖 CDN 或远程字体，也未放宽 Backend CORS。
+
+自动化与运行验证：
+
+```text
+8/8 frontend pure/API tests passed
+Vue SFC compile passed
+Rollup bundle verification passed (330654 bytes)
+CSS parse passed (210 top-level rules)
+Frontend Docker/Vite production build passed
+Frontend 18081 root/assets/healthz/SPA/API proxy passed
+434/434 backend full regression passed in 198.522s
+Docker Compose base + worker overlay config passed
+```
+
+真实只读联调复用并保留 08D.3 小说 `c561bb57-d151-4032-8a61-3abd8a144536`。Project、Bible、Plan、Arc、Chapter Plan、Workflow、Manuscript/revision 和 completed Fact Projection 全部通过工作台依赖的 API 返回；经 `18081` Nginx 代理按保留 user scope 查询精确 1 个项目。验收记录保存在 `data/sprint08e1_acceptance.json`。下一项为 08E.2 规划编辑、Planner candidate 审核接受与 Workflow 创建表单。
