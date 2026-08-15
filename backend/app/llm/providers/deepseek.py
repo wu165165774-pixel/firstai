@@ -6,6 +6,7 @@ from openai import AsyncOpenAI
 from app.config.settings import get_settings
 
 from app.llm.base import BaseChatProvider
+from app.llm.exceptions import ProviderConfigurationError
 from app.llm.schemas import (
     ChatRequest,
     ChatResponse,
@@ -22,9 +23,16 @@ class DeepSeekProvider(BaseChatProvider):
 
         settings = get_settings()
 
+        if not settings.deepseek_api_key.strip():
+            raise ProviderConfigurationError(
+                "DeepSeek provider is not configured."
+            )
+
+        self.model = settings.deepseek_model
+
         self.client = AsyncOpenAI(
-            api_key=settings.DEEPSEEK_API_KEY,
-            base_url=settings.DEEPSEEK_BASE_URL,
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
         )
 
 
@@ -38,7 +46,7 @@ class DeepSeekProvider(BaseChatProvider):
 
 
         response = await self.client.chat.completions.create(
-            model=request.model or "deepseek-chat",
+            model=request.model or self.model,
 
             messages=[
                 {
@@ -48,8 +56,11 @@ class DeepSeekProvider(BaseChatProvider):
                 for msg in request.messages
             ],
 
-            temperature=request.temperature
-            or 0.7,
+            temperature=(
+                0.7
+                if request.temperature is None
+                else request.temperature
+            ),
 
             max_tokens=request.max_tokens,
         )
@@ -103,7 +114,7 @@ class DeepSeekProvider(BaseChatProvider):
 
         stream = await self.client.chat.completions.create(
 
-            model=request.model or "deepseek-chat",
+            model=request.model or self.model,
 
             messages=[
                 {
@@ -132,7 +143,8 @@ class DeepSeekProvider(BaseChatProvider):
 
     async def health(self):
 
-        return bool(
-            get_settings()
-            .DEEPSEEK_API_KEY
-        )
+        try:
+            await self.client.models.list()
+            return True
+        except Exception:
+            return False

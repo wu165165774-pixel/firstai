@@ -31,6 +31,7 @@ const loadingProjects = ref(false);
 const loadingWorkspace = ref(false);
 const actionBusy = ref("");
 const engineStatus = ref("checking");
+const providerCatalog = ref([]);
 const notice = reactive({ message: "", tone: "info" });
 const createOpen = ref(false);
 const createForm = reactive({ title: "", genre: "", premise: "" });
@@ -102,6 +103,9 @@ const currentRevision = computed(() =>
 const approvedRevision = computed(() =>
   latestApprovedRevision(manuscriptRevisions.value),
 );
+const selectedProvider = computed(() =>
+  providerCatalog.value.find((item) => item.name === workflowForm.provider),
+);
 
 function announce(message, tone = "info") {
   notice.message = message;
@@ -125,6 +129,26 @@ async function probeEngine() {
     engineStatus.value = "online";
   } catch {
     engineStatus.value = "offline";
+  }
+}
+
+async function loadProviderCatalog({ probe = true } = {}) {
+  try {
+    const result = await api.listProviders({ probe, timeoutMs: 3000 });
+    providerCatalog.value = result.catalog || [];
+    const current = providerCatalog.value.find(
+      (item) => item.name === workflowForm.provider && item.configured,
+    );
+    const fallback =
+      current || providerCatalog.value.find((item) => item.configured);
+    if (fallback) {
+      workflowForm.provider = fallback.name;
+      if (!fallback.supported_models.includes(workflowForm.model)) {
+        workflowForm.model = fallback.default_model || fallback.supported_models[0] || "";
+      }
+    }
+  } catch {
+    providerCatalog.value = [];
   }
 }
 
@@ -178,6 +202,7 @@ async function connectIdentity() {
     if (identity.authenticated && identity.user_id) {
       userId.value = identity.user_id;
     }
+    await loadProviderCatalog();
     await reloadLibrary();
     announce(
       identity.authenticated ? `已认证为 ${identity.user_id}` : "开发模式：未启用后端鉴权",
@@ -482,9 +507,22 @@ async function controlOrchestration(item, action) {
 
 watch(userId, (value) => localStorage.setItem("novelforge.userId", value.trim()));
 watch(selectedRevisionNumber, () => loadProjection());
+watch(
+  () => workflowForm.provider,
+  (name) => {
+    const provider = providerCatalog.value.find((item) => item.name === name);
+    if (
+      provider &&
+      !provider.supported_models.includes(workflowForm.model)
+    ) {
+      workflowForm.model =
+        provider.default_model || provider.supported_models[0] || "";
+    }
+  },
+);
 
 onMounted(async () => {
-  await probeEngine();
+  await Promise.all([probeEngine(), loadProviderCatalog()]);
   await loadProjects();
   if (selectedNovelId.value) await loadWorkspace();
 });
@@ -807,8 +845,20 @@ onMounted(async () => {
         </label>
         <label>写作指令<textarea v-model="workflowForm.instruction" rows="5" required maxlength="8000"></textarea></label>
         <div class="modal-grid">
-          <label>Provider<input v-model="workflowForm.provider" required /></label>
-          <label>Model<input v-model="workflowForm.model" required /></label>
+          <label>Provider
+            <select v-if="providerCatalog.length" v-model="workflowForm.provider" required>
+              <option v-for="provider in providerCatalog" :key="provider.name" :value="provider.name" :disabled="!provider.configured">
+                {{ provider.name }} · {{ !provider.configured ? '未配置' : provider.available === true ? '可用' : provider.available === false ? '暂不可用' : '未探测' }}
+              </option>
+            </select>
+            <input v-else v-model="workflowForm.provider" required />
+          </label>
+          <label>Model
+            <select v-if="selectedProvider?.supported_models?.length" v-model="workflowForm.model" required>
+              <option v-for="model in selectedProvider.supported_models" :key="model" :value="model">{{ model }}</option>
+            </select>
+            <input v-else v-model="workflowForm.model" required />
+          </label>
           <label>最低总分<input v-model.number="workflowForm.minimum_overall_score" type="number" min="0" max="100" /></label>
           <label>最大修订轮数<input v-model.number="workflowForm.max_revision_rounds" type="number" min="0" max="5" /></label>
           <label>队列优先级<input v-model.number="workflowForm.priority" type="number" min="-100" max="100" /></label>

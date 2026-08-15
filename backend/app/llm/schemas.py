@@ -70,3 +70,47 @@ class ChatResponse(BaseModel):
     usage: TokenUsage | None = None
     latency_ms: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+ProviderKind = Literal["local", "cloud", "custom"]
+
+
+class ProviderDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1, max_length=128)
+    kind: ProviderKind = "custom"
+    default_model: str | None = Field(default=None, max_length=256)
+    supported_models: list[str] = Field(default_factory=list, max_length=50)
+    streaming: bool = True
+    reasoning_efforts: list[ReasoningEffort] = Field(default_factory=list)
+    requires_api_key: bool = False
+
+
+class ProviderStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    kind: ProviderKind
+    registered: bool = True
+    configured: bool
+    available: bool | None = None
+    default_model: str | None = None
+    supported_models: list[str] = Field(default_factory=list)
+    streaming: bool
+    reasoning_efforts: list[ReasoningEffort] = Field(default_factory=list)
+    requires_api_key: bool
+    latency_ms: float | None = Field(default=None, ge=0)
+    health_error: str | None = None
+
+
+class ProviderCatalogData(BaseModel):
+    providers: list[str] = Field(default_factory=list)
+    catalog: list[ProviderStatus] = Field(default_factory=list)
+    probed: bool = False
+
+
+class ProviderCatalogResponse(BaseModel):
+    code: int = 0
+    message: str = "success"
+    data: ProviderCatalogData

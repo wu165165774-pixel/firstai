@@ -82,6 +82,8 @@ const query = (values) => {
 export const api = {
   health: () => request("/health"),
   identity: () => request("/auth/me"),
+  listProviders: ({ probe = false, timeoutMs = 3000 } = {}) =>
+    request(`/providers${query({ probe, timeout_ms: timeoutMs })}`),
   listProjects: (userId) =>
     request(`/novels${query({ user_id: userId, limit: 200 })}`),
   createProject: (payload) =>

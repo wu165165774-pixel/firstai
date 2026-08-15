@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.32
+
+- Added a backward-compatible Provider catalog that reports capabilities and distinguishes registered, configured, and currently available states.
+- Added explicit, bounded, concurrent health probes with sanitized errors and no secret or endpoint disclosure.
+- Made local Qwen endpoint/model and DeepSeek endpoint/model/key configuration authoritative; fixed the DeepSeek settings attribute mismatch and zero-temperature handling.
+- Added Provider/Model catalog selection to the Vue Workflow form with configuration and live availability labels plus an offline fallback.
+- Added Provider-focused backend and frontend coverage, real Ollama catalog acceptance, and production frontend image verification.
+
 ## v0.15.0-alpha.31
 
 - Added opt-in Bearer authentication backed by operator-configured token-to-user and role mappings, with fail-closed validation when enabled.

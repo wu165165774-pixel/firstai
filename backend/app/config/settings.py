@@ -28,6 +28,13 @@ class Settings(BaseSettings):
         "https://api.deepseek.com"
     )
 
+    deepseek_model: str = "deepseek-chat"
+
+    # Local Qwen / Ollama OpenAI-compatible endpoint.
+    qwen_base_url: str = "http://ollama:11434"
+
+    qwen_model: str = "qwen3:8b"
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

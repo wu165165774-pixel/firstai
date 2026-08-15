@@ -18,6 +18,21 @@ test("request unwraps the standard backend envelope", async (context) => {
   assert.deepEqual(await api.listProjects("writer"), [{ novel_id: "n1" }]);
 });
 
+test("provider catalog requests a bounded availability probe", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => (globalThis.fetch = originalFetch));
+  globalThis.fetch = async (url) => {
+    assert.equal(url, "/api/v1/providers?probe=true&timeout_ms=2500");
+    return new Response(
+      JSON.stringify({ data: { providers: ["qwen_local"], catalog: [], probed: true } }),
+      { status: 200 },
+    );
+  };
+
+  const result = await api.listProviders({ probe: true, timeoutMs: 2500 });
+  assert.equal(result.probed, true);
+});
+
 test("request serializes mutation bodies as JSON", async (context) => {
   const originalFetch = globalThis.fetch;
   context.after(() => (globalThis.fetch = originalFetch));

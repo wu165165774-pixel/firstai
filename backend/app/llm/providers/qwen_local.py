@@ -11,6 +11,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from app.llm.base import BaseChatProvider
+from app.config.settings import get_settings
 from app.llm.schemas import (
     ChatMessage,
     ChatRequest,
@@ -29,17 +30,23 @@ class QwenLocalProvider(BaseChatProvider):
 
     def __init__(
         self,
-        base_url: str = (
-            "http://ollama:11434/v1"
-        ),
-        model: str = "qwen3:8b",
+        base_url: str | None = None,
+        model: str | None = None,
     ) -> None:
 
-        self.model = model
+        settings = get_settings()
+        resolved_base_url = (
+            base_url
+            or settings.qwen_base_url
+        ).rstrip("/")
+        if not resolved_base_url.endswith("/v1"):
+            resolved_base_url += "/v1"
+
+        self.model = model or settings.qwen_model
 
         self.client = AsyncOpenAI(
             api_key="ollama",
-            base_url=base_url,
+            base_url=resolved_base_url,
         )
 
     @staticmethod

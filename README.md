@@ -12,6 +12,7 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - 接受后事实通过事务 outbox 和逐存储 checkpoint 回写 Memory、Vector 与 Temporal Graph。
 - Vue 3 创作工作台：项目库、规划领域编辑、Planner 候选审核接受、章节生产、正文审核和事实投影状态。
 - 可选 Bearer 身份认证：令牌绑定固定用户、资源所有权隐藏和管理员运维门禁。
+- Provider 能力目录：区分注册、配置与实时可用状态，工作台按能力选择 Provider/Model。
 
 ## 启动
 
@@ -55,6 +56,18 @@ docker-compose -f docker-compose.yml -f docker-compose.worker.yml up -d --build
 docker exec -w /app novelforge-backend python scripts/verify_auth_runtime.py
 ```
 
+## 配置模型 Provider
+
+本地 Qwen 默认由 Compose 配置为 `http://ollama:11434` 与 `qwen3:8b`。可选 DeepSeek 配置放在不提交的 `backend/.env`；从 `backend/.env.example` 复制后填写：
+
+```text
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+空 key 表示未配置。`GET /api/v1/providers` 返回能力与配置状态但不发起网络请求；增加 `?probe=true&timeout_ms=3000` 才会并行执行有界健康探测。响应不会包含 key 或 base URL。工作台使用同一目录选择 Provider/Model，并在目录暂时不可访问时保留手工输入回退。
+
 ## 前端开发
 
 ```powershell
@@ -74,4 +87,5 @@ npm run dev
 - [Sprint 08E.1](docs/sprints/Sprint08E1.md)
 - [Sprint 08E.2](docs/sprints/Sprint08E2.md)
 - [Sprint 09A](docs/sprints/Sprint09A.md)
+- [Sprint 09B.1](docs/sprints/Sprint09B1.md)
 - [Changelog](docs/CHANGELOG.md)

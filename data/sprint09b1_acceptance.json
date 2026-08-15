@@ -1,0 +1,44 @@
+{
+  "sprint": "09B.1",
+  "version": "0.15.0-alpha.32",
+  "recorded_at": "2026-08-16T00:13:00+08:00",
+  "tests": {
+    "provider_focused": {"ran": 7, "passed": 7},
+    "qwen_reasoning": {"ran": 4, "passed": 4},
+    "frontend": {"ran": 16, "passed": 16},
+    "backend_full": {"ran": 447, "passed": 447, "duration_seconds": 98.357}
+  },
+  "runtime": {
+    "openapi_version": "0.15.0-alpha.32",
+    "provider_query_parameters": ["probe", "timeout_ms"],
+    "catalog_probed": true,
+    "providers": [
+      {
+        "name": "deepseek",
+        "kind": "cloud",
+        "registered": true,
+        "configured": true,
+        "available": false,
+        "default_model": "deepseek-chat",
+        "health_error": "health_check_failed"
+      },
+      {
+        "name": "qwen_local",
+        "kind": "local",
+        "registered": true,
+        "configured": true,
+        "available": true,
+        "default_model": "qwen3:8b",
+        "health_error": null,
+        "latency_ms": 20.19
+      }
+    ],
+    "frontend_root_status": 200,
+    "frontend_health_status": 200,
+    "frontend_api_proxy_status": 200,
+    "frontend_image": "sha256:d57b87a55a5fc4100b44a4f83ad3d162833ed0842532ca2603fa54d51241790e"
+  },
+  "secrets_recorded": false,
+  "existing_data_deleted": false,
+  "result": "PASS"
+}

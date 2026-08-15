@@ -2904,3 +2904,28 @@ git diff --check passed
 ```
 
 生产前端镜像以 16/16 steps 构建完成，root、healthz 与 Nginx API proxy 均返回 HTTP 200。隔离 Uvicorn 在 `AUTH_ENABLED=true` 下实际验证匿名 401、正确 token 200、身份不匹配 403、跨用户 Novel 404、普通用户运维 403 与管理员运维 200；验收脚本随后关闭隔离进程，主 Backend 保持默认开发模式。验收记录保存在 `data/sprint09a_acceptance.json`；完整状态见 `docs/sprints/Sprint09A.md`。下一项为 Sprint 09B Provider 配置与 Prompt 版本。
+
+## v0.15.0-alpha.32 — Sprint 09B.1 Provider 能力与配置状态
+
+LLM Registry 在保持 `providers: ["deepseek", "qwen_local"]` 兼容字段的同时，增加不可变能力描述：Provider 类型、默认/支持模型、streaming、reasoning effort 与 key 要求。Catalog 明确区分 `registered`、`configured` 与 `available`；普通查询不实例化 Provider 或访问网络，只有显式 `probe=true` 才并行执行健康检查，单路超时由 `timeout_ms` 限制，错误统一收敛为不含异常详情的稳定代码。
+
+Qwen OpenAI-compatible base URL 与模型改由 Settings/Compose 提供，并确定性补全 `/v1`。DeepSeek 修复了错误的大写 Settings 属性访问，支持配置默认模型、保留 `temperature=0`，空 key 会以明确配置异常失败。配置示例只提供空 key，占位文件与 Catalog 均不输出 secret 或 base URL。
+
+Vue 工作台的单章 Workflow 表单已接入 Catalog，按配置与探测状态展示 Provider，并根据能力选择模型；目录不可访问时保留手工输入兼容路径。生产前端镜像、root、healthz 与 Nginx API proxy 已验证。真实 Catalog 探测中本地 `qwen_local/qwen3:8b` 可用；已配置但当前不可达的 DeepSeek 独立报告 `health_check_failed`，不会被错误标记为未注册或未配置。
+
+自动化与运行验证：
+
+```text
+7/7 Provider focused tests passed
+4/4 Qwen reasoning tests passed
+16/16 frontend tests passed
+447/447 backend full regression passed in 98.357s
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+Frontend Docker/Vite production build passed (16 BuildKit steps)
+Frontend root / healthz / API proxy returned HTTP 200
+Real Qwen Provider probe passed
+```
+
+验收记录保存在 `data/sprint09b1_acceptance.json`；既有业务与验收数据库未删除。下一项为 Sprint 09B.2 Prompt revision 与可审计选择，OpenAI/Claude/DashScope 的新增适配在后续独立子 Sprint 实施。
