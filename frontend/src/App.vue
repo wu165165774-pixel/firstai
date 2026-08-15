@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import PlanningStudio from "./components/PlanningStudio.vue";
-import { ApiError, api } from "./lib/api.js";
+import { ApiError, api, getAccessToken, setAccessToken } from "./lib/api.js";
 import {
   canImportWorkflow,
   chapterTitle,
@@ -22,6 +22,7 @@ const navItems = [
 ];
 
 const userId = ref(localStorage.getItem("novelforge.userId") || "");
+const accessToken = ref(getAccessToken());
 const activeView = ref("overview");
 const projects = ref([]);
 const selectedNovelId = ref(localStorage.getItem("novelforge.novelId") || "");
@@ -168,6 +169,23 @@ async function reloadLibrary() {
     manuscripts: [],
     orchestrations: [],
   });
+}
+
+async function connectIdentity() {
+  setAccessToken(accessToken.value);
+  try {
+    const identity = await api.identity();
+    if (identity.authenticated && identity.user_id) {
+      userId.value = identity.user_id;
+    }
+    await reloadLibrary();
+    announce(
+      identity.authenticated ? `已认证为 ${identity.user_id}` : "开发模式：未启用后端鉴权",
+      "success",
+    );
+  } catch (error) {
+    explainError(error);
+  }
 }
 
 async function loadWorkspace() {
@@ -527,8 +545,12 @@ onMounted(async () => {
       <div class="identity-card">
         <label for="user-id">创作者 ID</label>
         <div class="identity-input">
-          <input id="user-id" v-model="userId" placeholder="user_id" @keyup.enter="reloadLibrary" />
-          <button type="button" @click="reloadLibrary">载入</button>
+          <input id="user-id" v-model="userId" placeholder="user_id" @keyup.enter="connectIdentity" />
+        </div>
+        <label for="access-token">访问令牌（仅当前浏览器会话）</label>
+        <div class="identity-input">
+          <input id="access-token" v-model="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token；开发模式可留空" @keyup.enter="connectIdentity" />
+          <button type="button" @click="connectIdentity">连接</button>
         </div>
       </div>
     </aside>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiError, api, request } from "../src/lib/api.js";
+import { ApiError, api, request, setAccessToken } from "../src/lib/api.js";
 
 test("request unwraps the standard backend envelope", async (context) => {
   const originalFetch = globalThis.fetch;
@@ -90,4 +90,23 @@ test("request exposes backend validation messages", async (context) => {
       error.status === 409 &&
       error.message === "revision conflict",
   );
+});
+
+test("configured access token is sent as a bearer header", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+    setAccessToken("", { persist: false });
+  });
+  setAccessToken("session-secret", { persist: false });
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.headers.get("Authorization"), "Bearer session-secret");
+    return new Response(
+      JSON.stringify({ data: { authenticated: true, user_id: "writer" } }),
+      { status: 200 },
+    );
+  };
+
+  const identity = await api.identity();
+  assert.equal(identity.user_id, "writer");
 });

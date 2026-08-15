@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from loguru import logger
 
 from app.api.health import router as health_router
@@ -19,6 +19,7 @@ from app.config.settings import settings
 from app.core.exception_handler import novelforge_exception_handler
 from app.core.exceptions import NovelForgeException
 from app.core.middleware import RequestLogMiddleware
+from app.core.auth import authorize_request, validate_auth_configuration
 from app.fact_projection.service import fact_projection_service
 from app.rag.consistency import memory_index_consistency_service
 from app.knowledge.manager import external_knowledge_manager
@@ -27,6 +28,8 @@ from app.knowledge.manager import external_knowledge_manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run NovelForge startup and shutdown tasks."""
+
+    validate_auth_configuration()
 
     try:
         result = await memory_index_consistency_service.check_and_repair()
@@ -86,7 +89,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.30",
+    version="0.15.0-alpha.31",
     lifespan=lifespan,
 )
 
@@ -96,6 +99,8 @@ app.add_exception_handler(
     NovelForgeException,
     novelforge_exception_handler,
 )
+
+protected_dependencies = [Depends(authorize_request)]
 
 app.include_router(
     health_router,
@@ -107,54 +112,63 @@ app.include_router(
     chat_router,
     prefix="/api/v1",
     tags=["LLM"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     provider_router,
     prefix="/api/v1",
     tags=["LLM"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     memory_router,
     prefix="/api/v1",
     tags=["Memory"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     retrieval_router,
     prefix="/api/v1",
     tags=["Retrieval"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     temporal_graph_router,
     prefix="/api/v1",
     tags=["Temporal Graph"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     consistency_router,
     prefix="/api/v1",
     tags=["Consistency"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     external_knowledge_router,
     prefix="/api/v1",
     tags=["External Knowledge"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     agent_router,
     prefix="/api/v1",
     tags=["Agents"],
+    dependencies=protected_dependencies,
 )
 
 app.include_router(
     workflow_router,
     prefix="/api/v1",
     tags=["Workflows"],
+    dependencies=protected_dependencies,
 )
 
 from app.api.v1.novels import router as novel_router
@@ -163,6 +177,7 @@ app.include_router(
     novel_router,
     prefix="/api/v1",
     tags=["Novel Planning"],
+    dependencies=protected_dependencies,
 )
 
 from app.api.v1.planner import router as planner_router
@@ -171,6 +186,7 @@ app.include_router(
     planner_router,
     prefix="/api/v1",
     tags=["Planner"],
+    dependencies=protected_dependencies,
 )
 
 from app.api.v1.manuscripts import router as manuscript_router
@@ -179,6 +195,7 @@ app.include_router(
     manuscript_router,
     prefix="/api/v1",
     tags=["Manuscript"],
+    dependencies=protected_dependencies,
 )
 
 from app.api.v1.orchestrations import router as orchestration_router
@@ -187,4 +204,13 @@ app.include_router(
     orchestration_router,
     prefix="/api/v1",
     tags=["Orchestrator"],
+    dependencies=protected_dependencies,
+)
+
+from app.api.v1.auth import router as auth_router
+
+app.include_router(
+    auth_router,
+    prefix="/api/v1",
+    tags=["Authentication"],
 )

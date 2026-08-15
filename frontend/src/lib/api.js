@@ -1,4 +1,27 @@
 const API_ROOT = import.meta.env?.VITE_API_ROOT || "/api/v1";
+const TOKEN_STORAGE_KEY = "novelforge.accessToken";
+let accessToken = "";
+
+try {
+  accessToken = globalThis.sessionStorage?.getItem(TOKEN_STORAGE_KEY) || "";
+} catch {
+  accessToken = "";
+}
+
+export function setAccessToken(value, { persist = true } = {}) {
+  accessToken = String(value || "").trim();
+  if (!persist) return;
+  try {
+    if (accessToken) globalThis.sessionStorage?.setItem(TOKEN_STORAGE_KEY, accessToken);
+    else globalThis.sessionStorage?.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // In-memory authentication still works when browser storage is unavailable.
+  }
+}
+
+export function getAccessToken() {
+  return accessToken;
+}
 
 export class ApiError extends Error {
   constructor(message, { status = 0, detail = null } = {}) {
@@ -23,6 +46,9 @@ export async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (options.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json; charset=utf-8");
+  }
+  if (accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
   }
   const response = await fetch(`${API_ROOT}${path}`, {
     ...options,
@@ -55,6 +81,7 @@ const query = (values) => {
 
 export const api = {
   health: () => request("/health"),
+  identity: () => request("/auth/me"),
   listProjects: (userId) =>
     request(`/novels${query({ user_id: userId, limit: 200 })}`),
   createProject: (payload) =>

@@ -11,6 +11,14 @@ class Settings(BaseSettings):
 
     debug: bool = True
 
+    # Authentication is opt-in for local development. When enabled,
+    # tokens are loaded from a JSON object without ever being returned
+    # by an API. Example value:
+    # {"long-secret":{"user_id":"alice","roles":["user"]}}
+    auth_enabled: bool = False
+
+    auth_tokens_json: str = "{}"
+
 
     # DeepSeek
 

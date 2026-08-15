@@ -1,0 +1,55 @@
+{
+  "sprint": "09A",
+  "target_version": "v0.15.0-alpha.31",
+  "accepted_at": "2026-08-15T21:35:27.9108426+08:00",
+  "released": false,
+  "release_commit": null,
+  "authentication": {
+    "default_enabled": false,
+    "scheme": "bearer",
+    "public_health": true,
+    "token_returned_or_logged": false,
+    "workbench_storage": "sessionStorage",
+    "runtime_matrix": {
+      "health": 200,
+      "anonymous": 401,
+      "authenticated": 200,
+      "mismatch": 403,
+      "owned": 200,
+      "hidden": 404,
+      "user_ops": 403,
+      "admin_ops": 200,
+      "identity": "acceptance-08e2-6c744aa142"
+    },
+    "isolated_runtime_stopped_after_test": true,
+    "main_runtime_restored_to_auth_disabled": true
+  },
+  "frontend": {
+    "image": "sha256:06ac94617b341af44911caae39147896316dd3cb022a45376c41536dd40fe0d5",
+    "docker_build_steps": "16/16",
+    "root_status": 200,
+    "healthz_status": 200,
+    "backend_proxy_status": 200,
+    "javascript_asset": "/assets/index-vPC3u7h3.js",
+    "javascript_bytes": 120983,
+    "css_asset": "/assets/index-DNyWOLdy.css",
+    "css_bytes": 24556,
+    "bundle_contains_auth_me": true,
+    "bundle_contains_bearer_header": true
+  },
+  "verification": {
+    "authentication_tests": "6/6 passed",
+    "novel_project_tests": "15/15 passed",
+    "workflow_run_tests": "9/9 passed",
+    "memory_lifecycle_tests": "15/15 passed",
+    "frontend_tests": "15/15 passed",
+    "vue_bundle_bytes": 377316,
+    "backend_tests": "440/440 passed in 112.999s",
+    "python_compileall": "passed",
+    "compose_base": "passed",
+    "compose_worker_overlay": "passed",
+    "git_diff_check": "passed",
+    "openapi_version": "0.15.0-alpha.31"
+  },
+  "data_retained": true
+}

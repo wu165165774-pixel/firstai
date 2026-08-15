@@ -48,6 +48,7 @@ button:disabled { opacity: .5; cursor: not-allowed !important; }
 .empty-copy, .panel-empty { color: var(--ink-soft); font-size: 13px; line-height: 1.7; padding: 16px 6px; }
 .identity-card { margin-top: auto; padding: 14px 8px 4px; border-top: 1px solid rgba(255,255,255,.08); position: relative; z-index: 1; }
 .identity-card label { display: block; color: #77786f; font-size: 10px; letter-spacing: .12em; margin-bottom: 7px; }
+.identity-card .identity-input + label { margin-top: 10px; }
 .identity-input { display: flex; gap: 6px; }
 .identity-input input { min-width: 0; flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.12); color: #eee; border-radius: 6px; font-size: 11px; }
 .identity-input button { border: 0; border-radius: 6px; background: #3c3e38; color: #ddd; font-size: 11px; cursor: pointer; }

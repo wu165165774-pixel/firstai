@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.31
+
+- Added opt-in Bearer authentication backed by operator-configured token-to-user and role mappings, with fail-closed validation when enabled.
+- Bound declared request identity and existing Novel, Workflow Run, and Memory ownership to the authenticated user while hiding cross-user resources behind HTTP 404.
+- Restricted global queue, Worker, dead-letter, operations, and Prometheus endpoints to the `admin` role and rejected unscoped project/Workflow listings.
+- Added `/api/v1/auth/me`, OpenAPI Bearer security declarations, a public health exception, and a session-only workbench token input.
+- Added Compose and `.env.example` configuration without committing secrets.
+
 ## v0.15.0-alpha.30
 
 - Added Story Bible, Novel Plan, Story Arc, and Chapter Plan domain editors with structured fields, advanced JSON sections, revision display, and optimistic save semantics.

@@ -2879,3 +2879,28 @@ git diff --check passed
 ```
 
 验收记录保存在 `data/sprint08e2_acceptance.json`；既有数据库和验收数据未删除。完整发布验收见 `docs/sprints/Sprint08E2.md`。下一项为 Sprint 09 工程化与安全边界。
+
+## v0.15.0-alpha.31 — Sprint 09A 鉴权与多用户安全边界
+
+NovelForge 已加入可选的 Bearer 身份层。运维通过 `AUTH_TOKENS_JSON` 将高熵 token 映射到固定 `user_id` 和 roles；启用鉴权时，无 token/错误 token 分别返回 401，配置为空、JSON 无效、token 过短或 principal 不完整时拒绝安全运行。默认 `AUTH_ENABLED=false` 保留本地单机开发兼容。
+
+统一授权依赖递归检查 path、query、JSON body 与 metadata 中的用户/小说声明。普通用户只能声明令牌绑定的 `user_id`；已存在的 Novel、Workflow Run 与 Memory 会反查所有者，跨用户资源统一隐藏为 404。普通用户不能无用户过滤列出全部项目/Run，也不能访问 Queue、Worker、DLQ、Operations 与 Prometheus；`admin` role 保留跨用户运维权限。
+
+`/api/v1/health` 保持匿名，其他业务 operation 在 OpenAPI 中声明 `BearerAuth`；`GET /api/v1/auth/me` 返回当前身份但绝不返回 token。Vue 工作台增加会话令牌输入，令牌只进入 `sessionStorage` 和 Authorization header，认证身份会校正创作者 ID。Compose 与 `.env.example` 只提供无 secret 的配置入口。
+
+当前自动化验证：
+
+```text
+6/6 Authentication focused tests passed
+15/15 Novel Project focused tests passed
+9/9 Workflow Run focused tests passed
+15/15 Memory Lifecycle focused tests passed
+15/15 frontend tests passed
+Vue bundle verification passed (377316 bytes)
+440/440 backend full regression passed in 112.999s
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+生产前端镜像以 16/16 steps 构建完成，root、healthz 与 Nginx API proxy 均返回 HTTP 200。隔离 Uvicorn 在 `AUTH_ENABLED=true` 下实际验证匿名 401、正确 token 200、身份不匹配 403、跨用户 Novel 404、普通用户运维 403 与管理员运维 200；验收脚本随后关闭隔离进程，主 Backend 保持默认开发模式。验收记录保存在 `data/sprint09a_acceptance.json`；完整状态见 `docs/sprints/Sprint09A.md`。下一项为 Sprint 09B Provider 配置与 Prompt 版本。
