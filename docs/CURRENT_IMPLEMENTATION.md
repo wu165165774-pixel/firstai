@@ -2853,3 +2853,29 @@ Docker Compose base + worker overlay config passed
 ```
 
 真实只读联调复用并保留 08D.3 小说 `c561bb57-d151-4032-8a61-3abd8a144536`。Project、Bible、Plan、Arc、Chapter Plan、Workflow、Manuscript/revision 和 completed Fact Projection 全部通过工作台依赖的 API 返回；经 `18081` Nginx 代理按保留 user scope 查询精确 1 个项目。验收记录保存在 `data/sprint08e1_acceptance.json`。下一项为 08E.2 规划编辑、Planner candidate 审核接受与 Workflow 创建表单。
+
+## v0.15.0-alpha.30 — Sprint 08E.2 规划编辑与 Planner 候选审核
+
+Planning Studio 已把 Story Bible、Novel Plan、Story Arc 与 Chapter Plan 的编辑接到正式领域 API。常用字段使用表单，复杂嵌套结构使用经过数组/对象形状校验的 JSON 区域；更新携带 `expected_revision`，新 Arc/Chapter 使用 POST，既有实体保持稳定 ID 并使用 PUT 产生新 revision。
+
+Planner 三目标在浏览器中形成 `generate -> review/edit -> explicit accept` 闭环。生成结果明确显示 `persisted=false`、模型、token、latency 与 compact context；accept 保留 source revisions，并固定使用生成时的 Story Arc/Chapter coordinates，因此审核 JSON 不能通过同时篡改请求坐标来绕过后端校验。Story Arc 生成要求 fresh Novel Plan，Chapter Plan 生成要求 fresh Plan 与所选 Arc；Novel Plan stale 时仍允许重新生成。
+
+章节生产页新增单章 Workflow 表单。它只列出 fresh Chapter Plan，提交精确 `chapter_plan_id + revision` 到持久化 async queue，并携带 idempotency key 与优先级；Workflow 成功后仍需在既有 Manuscript 页面手工导入、审核和接受。
+
+真实 `qwen3:8b` 验收在保留小说 `85c4dff6-7530-459f-a3f7-1eaf34fc5c76` 上完成 Novel Plan、V1/A1 Story Arc 和 chapter 1 三段 candidate-only/explicit-accept。三次生成分别使用 2499、2565、3502 tokens；Arc revision 更新使 Chapter stale，Chapter 新 revision 又恢复 fresh。异步 Workflow 重复提交返回同一 Run 且 `deduplicated=true`。该 Run 最终为 `resumable/review_parse_failed`，因此没有自动 import/accept；本次验收确认的是队列、精确 revision 绑定和幂等边界，而不是成功正文产物。
+
+自动化与运行验证：
+
+```text
+14/14 frontend pure/API tests passed
+Vue bundle verification passed (375344 bytes)
+CSS parse passed (255 top-level rules)
+Frontend Docker/Vite production build passed
+Frontend 18081 root/assets/healthz/API proxy passed
+434/434 backend full regression passed in 193.326s
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+```
+
+验收记录保存在 `data/sprint08e2_acceptance.json`；既有数据库和验收数据未删除。完整发布验收见 `docs/sprints/Sprint08E2.md`。下一项为 Sprint 09 工程化与安全边界。

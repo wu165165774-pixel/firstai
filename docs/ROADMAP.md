@@ -32,13 +32,13 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.28
+v0.15.0-alpha.29
 ```
 
 当前已验收、待发布目标：
 
 ```text
-v0.15.0-alpha.29 — Sprint 08E.1 Vue 创作工作台基础
+v0.15.0-alpha.30 — Sprint 08E.2 规划编辑与 Planner 候选审核
 ```
 
 已完成的主干能力：
@@ -66,7 +66,7 @@ v0.15.0-alpha.29 — Sprint 08E.1 Vue 创作工作台基础
 下一开发项：
 
 ```text
-Sprint 08E.2 - 规划编辑与 Planner 候选审核
+Sprint 09 - Provider、鉴权与发布工程
 状态：待开发
 ```
 
@@ -86,8 +86,8 @@ Sprint 08E.2 - 规划编辑与 Planner 候选审核
 | 08D.1 | Temporal Graph 基础 | 已完成 | 角色、地点、事件、关系、时间有效区间与来源 revision 可持久化 |
 | 08D.2 | Consistency Engine | 已完成 | 写作前约束、写作后事实抽取、冲突检测、审核修复形成闭环 |
 | 08D.3 | Graph/Vector 融合与事实回写 | 已完成 | 新正文接受后原子入队，并幂等、可恢复地更新记忆、向量和图事实 |
-| 08E.1 | Vue 创作工作台基础 | 已完成，待发布 | Project 总览、生产运行、正文审核/接受、事实投影与 Compose/Nginx 运行闭环 |
-| 08E.2 | 规划编辑与候选审核 | 待开发 | Bible/Plan/Arc/Chapter 编辑、Planner candidate 审核接受和 Workflow 创建表单 |
+| 08E.1 | Vue 创作工作台基础 | 已完成 | Project 总览、生产运行、正文审核/接受、事实投影与 Compose/Nginx 运行闭环 |
+| 08E.2 | 规划编辑与候选审核 | 已完成，待发布 | Bible/Plan/Arc/Chapter 编辑、Planner candidate 审核接受和 Workflow 创建表单 |
 | 09 | Provider、Prompt、鉴权与发布工程 | 待开发 | OpenAI/Claude/DashScope、Prompt 版本、Auth、CI、迁移、备份与导出可验收 |
 | 1.0 | 插件化与正式发布 | 待开发 | 插件边界、兼容策略、安装/禁用、升级和完整产品验收完成 |
 

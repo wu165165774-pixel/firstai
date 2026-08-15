@@ -3,6 +3,16 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.30
+
+- Added Story Bible, Novel Plan, Story Arc, and Chapter Plan domain editors with structured fields, advanced JSON sections, revision display, and optimistic save semantics.
+- Added local Qwen Planner candidate generation, editable candidate review, explicit acceptance, source revision display, and client-side stale/fixed-coordinate gates without bypassing backend validation.
+- Added new Story Arc and Chapter Plan creation flows while keeping existing entities on their independent stable IDs and revisioned PUT APIs.
+- Added a grounded single-chapter Workflow form that binds the exact fresh Chapter Plan revision and submits through the persistent async queue with idempotency and priority headers.
+- Added deterministic planning payload/coordinate tests and async Workflow API tests, bringing the frontend suite to 14 tests.
+- Fixed the frontend container healthcheck to use the explicit IPv4 loopback address and verified the production container reaches `healthy`.
+- Verified real Qwen Novel Plan, Story Arc, and Chapter Plan candidate-only/accept flows plus direct stale propagation/repair and idempotent Workflow queueing through the Nginx workbench proxy.
+
 ## v0.15.0-alpha.29
 
 - Added the Vue 3 creation workbench with user-scoped Project library, six-stage planning/production overview, and responsive desktop/mobile layouts.

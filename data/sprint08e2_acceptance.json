@@ -1,0 +1,84 @@
+{
+  "sprint": "08E.2",
+  "target_version": "v0.15.0-alpha.30",
+  "accepted_at": "2026-08-15T01:46:23.2123977+08:00",
+  "released": false,
+  "release_commit": null,
+  "scope": {
+    "marker": "6c744aa142",
+    "user_id": "acceptance-08e2-6c744aa142",
+    "novel_id": "85c4dff6-7530-459f-a3f7-1eaf34fc5c76",
+    "story_arc_id": "0c008fb2-6f4d-4b46-a505-de76a5961a7e",
+    "chapter_plan_id": "6e580607-d11a-4a39-afab-5baa1b32501c",
+    "data_retained": true
+  },
+  "manual_editor": {
+    "story_bible_revision": 2,
+    "story_arc_revision": 2,
+    "chapter_plan_revision": 2,
+    "chapter_plan_source_story_arc_revision": 2,
+    "arc_update_made_chapter_stale": true,
+    "chapter_update_restored_freshness": true
+  },
+  "planner": {
+    "provider": "qwen_local",
+    "model": "qwen3:8b",
+    "reasoning_effort": "medium",
+    "novel_plan": {
+      "candidate_persisted": false,
+      "accepted_persisted": true,
+      "revision": 2,
+      "tokens": 2499,
+      "latency_ms": 21013.4549,
+      "planner_context_chars": 977
+    },
+    "story_arc": {
+      "candidate_persisted": false,
+      "accepted_persisted": true,
+      "volume_number": 1,
+      "arc_number": 1,
+      "tokens": 2565,
+      "latency_ms": 11870.8374
+    },
+    "chapter_plan": {
+      "candidate_persisted": false,
+      "accepted_persisted": true,
+      "chapter_number": 1,
+      "tokens": 3502,
+      "latency_ms": 19257.8679
+    }
+  },
+  "async_workflow": {
+    "run_id": "04324988-f921-46ba-88af-59dcaf5309d8",
+    "initial_queue_submission": true,
+    "idempotent_retry_same_run": true,
+    "deduplicated": true,
+    "execution_status": "resumable",
+    "workflow_status": "review_parse_failed",
+    "quality_gate_passed": false,
+    "content_length": 1287,
+    "revision_rounds": 1,
+    "total_tokens": 15386,
+    "error": null,
+    "automatically_imported_or_accepted": false
+  },
+  "verification": {
+    "frontend_tests": "14/14 passed",
+    "vue_bundle_bytes": 375344,
+    "css_top_level_rules": 255,
+    "vite_modules": 14,
+    "vite_production_javascript_kb": 116.96,
+    "vite_production_css_kb": 24.50,
+    "production_javascript_bytes": 119915,
+    "frontend_container_health": "healthy",
+    "frontend_root_status": 200,
+    "frontend_healthz_status": 200,
+    "frontend_backend_proxy_status": 200,
+    "backend_tests": "434/434 passed in 193.326s",
+    "python_compileall": "passed",
+    "compose_base": "passed",
+    "compose_worker_overlay": "passed",
+    "git_diff_check": "passed",
+    "openapi_version": "0.15.0-alpha.30"
+  }
+}

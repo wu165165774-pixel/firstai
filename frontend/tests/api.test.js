@@ -54,6 +54,27 @@ test("workflow re-import carries manuscript optimistic revision", async (context
   });
 });
 
+test("async workflow submission carries queue headers and grounded payload", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => (globalThis.fetch = originalFetch));
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/workflows/chapter/runs/async");
+    assert.equal(options.headers.get("Idempotency-Key"), "ui-key");
+    assert.equal(options.headers.get("X-Workflow-Priority"), "7");
+    assert.equal(JSON.parse(options.body).chapter_plan_revision, 3);
+    return new Response(
+      JSON.stringify({ data: { run: { run_id: "run-ui" }, job: {} } }),
+      { status: 202 },
+    );
+  };
+
+  const result = await api.enqueueWorkflow(
+    { chapter_plan_id: "cp-1", chapter_plan_revision: 3 },
+    { idempotencyKey: "ui-key", priority: 7 },
+  );
+  assert.equal(result.run.run_id, "run-ui");
+});
+
 test("request exposes backend validation messages", async (context) => {
   const originalFetch = globalThis.fetch;
   context.after(() => (globalThis.fetch = originalFetch));

@@ -61,13 +61,47 @@ export const api = {
     request("/novels", { method: "POST", body: payload }),
   getProject: (novelId) => request(`/novels/${novelId}`),
   getBible: (novelId) => request(`/novels/${novelId}/story-bible`),
+  updateBible: (novelId, payload) =>
+    request(`/novels/${novelId}/story-bible`, { method: "PUT", body: payload }),
   getPlan: (novelId) => request(`/novels/${novelId}/plan`),
+  updatePlan: (novelId, payload) =>
+    request(`/novels/${novelId}/plan`, { method: "PUT", body: payload }),
   listArcs: (novelId) => request(`/novels/${novelId}/arcs?limit=500`),
+  createArc: (novelId, payload) =>
+    request(`/novels/${novelId}/arcs`, { method: "POST", body: payload }),
+  updateArc: (novelId, arcId, payload) =>
+    request(`/novels/${novelId}/arcs/${arcId}`, { method: "PUT", body: payload }),
   listChapterPlans: (novelId) =>
     request(`/novels/${novelId}/chapter-plans?limit=500`),
+  createChapterPlan: (novelId, payload) =>
+    request(`/novels/${novelId}/chapter-plans`, { method: "POST", body: payload }),
+  updateChapterPlan: (novelId, chapterPlanId, payload) =>
+    request(`/novels/${novelId}/chapter-plans/${chapterPlanId}`, {
+      method: "PUT",
+      body: payload,
+    }),
+  generatePlanCandidate: (novelId, payload) =>
+    request(`/novels/${novelId}/planner/generate`, {
+      method: "POST",
+      body: payload,
+    }),
+  acceptPlanCandidate: (novelId, payload) =>
+    request(`/novels/${novelId}/planner/accept`, {
+      method: "POST",
+      body: payload,
+    }),
   listWorkflows: (novelId) =>
     request(`/workflows/runs${query({ novel_id: novelId, limit: 100 })}`),
   getWorkflow: (runId) => request(`/workflows/runs/${runId}`),
+  enqueueWorkflow: (payload, { idempotencyKey, priority = 0 } = {}) =>
+    request("/workflows/chapter/runs/async", {
+      method: "POST",
+      headers: {
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+        "X-Workflow-Priority": String(priority),
+      },
+      body: payload,
+    }),
   listManuscripts: (novelId) =>
     request(`/novels/${novelId}/manuscript/chapters?limit=500`),
   getManuscript: (novelId, chapterId) =>

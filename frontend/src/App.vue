@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
+import PlanningStudio from "./components/PlanningStudio.vue";
 import { ApiError, api } from "./lib/api.js";
 import {
   canImportWorkflow,
@@ -15,6 +16,7 @@ import {
 
 const navItems = [
   { key: "overview", label: "创作总览", mark: "总" },
+  { key: "planning", label: "规划工作台", mark: "策" },
   { key: "production", label: "章节生产", mark: "写" },
   { key: "manuscript", label: "正文审核", mark: "审" },
 ];
@@ -31,6 +33,18 @@ const engineStatus = ref("checking");
 const notice = reactive({ message: "", tone: "info" });
 const createOpen = ref(false);
 const createForm = reactive({ title: "", genre: "", premise: "" });
+const workflowOpen = ref(false);
+const workflowForm = reactive({
+  chapter_plan_id: "",
+  instruction: "",
+  provider: "qwen_local",
+  model: "qwen3:8b",
+  auto_rewrite: true,
+  max_revision_rounds: 2,
+  minimum_overall_score: 80,
+  priority: 0,
+  idempotency_key: "",
+});
 
 const workspace = reactive({
   project: null,
@@ -372,6 +386,63 @@ async function createOrchestration() {
   }
 }
 
+function openWorkflowComposer() {
+  const plan = workspace.chapterPlans.find((item) => !item.is_stale);
+  workflowForm.chapter_plan_id = plan?.chapter_plan_id || "";
+  workflowForm.instruction = plan
+    ? `按已接受的第 ${plan.chapter_number} 章规划《${plan.title}》写出完整正文，并承接此前已接受正文。`
+    : "";
+  workflowForm.idempotency_key = globalThis.crypto?.randomUUID?.() || `${Date.now()}`;
+  workflowOpen.value = true;
+}
+
+async function enqueueChapterWorkflow() {
+  const plan = workspace.chapterPlans.find(
+    (item) => item.chapter_plan_id === workflowForm.chapter_plan_id,
+  );
+  if (!plan || plan.is_stale) {
+    announce("请选择 fresh Chapter Plan", "warning");
+    return;
+  }
+  actionBusy.value = "enqueue-workflow";
+  try {
+    const submission = await api.enqueueWorkflow(
+      {
+        user_id: workspace.project.user_id,
+        novel_id: selectedNovelId.value,
+        instruction: workflowForm.instruction.trim(),
+        chapter_plan_id: plan.chapter_plan_id,
+        chapter_plan_revision: plan.revision,
+        provider: workflowForm.provider,
+        model: workflowForm.model,
+        use_memory: true,
+        auto_rewrite: workflowForm.auto_rewrite,
+        max_revision_rounds: Number(workflowForm.max_revision_rounds),
+        minimum_overall_score: Number(workflowForm.minimum_overall_score),
+      },
+      {
+        idempotencyKey: `workbench:${selectedNovelId.value}:${plan.chapter_plan_id}:${workflowForm.idempotency_key}`,
+        priority: Number(workflowForm.priority),
+      },
+    );
+    workflowOpen.value = false;
+    await loadWorkspace();
+    selectedRun.value = submission.run;
+    announce(
+      submission.deduplicated ? "相同 Workflow 已在队列中" : "章节 Workflow 已进入队列",
+      "success",
+    );
+  } catch (error) {
+    explainError(error);
+  } finally {
+    actionBusy.value = "";
+  }
+}
+
+function relayNotice(payload) {
+  announce(payload.message, payload.tone);
+}
+
 async function controlOrchestration(item, action) {
   actionBusy.value = `${action}:${item.orchestration_id}`;
   try {
@@ -465,7 +536,7 @@ onMounted(async () => {
     <main class="workspace">
       <header class="topbar">
         <div>
-          <p class="eyebrow">{{ activeView === "overview" ? "STORY OPERATIONS" : activeView === "production" ? "CHAPTER PRODUCTION" : "MANUSCRIPT REVIEW" }}</p>
+          <p class="eyebrow">{{ activeView === "overview" ? "STORY OPERATIONS" : activeView === "planning" ? "PLANNING STUDIO" : activeView === "production" ? "CHAPTER PRODUCTION" : "MANUSCRIPT REVIEW" }}</p>
           <h1>{{ workspace.project?.title || "选择或建立一个创作项目" }}</h1>
         </div>
         <div class="topbar-actions">
@@ -488,6 +559,14 @@ onMounted(async () => {
           <strong>NF</strong>
         </div>
       </section>
+
+      <PlanningStudio
+        v-else-if="activeView === 'planning'"
+        :novel-id="selectedNovelId"
+        :workspace="workspace"
+        @notice="relayNotice"
+        @refresh="loadWorkspace"
+      />
 
       <template v-else-if="activeView === 'overview'">
         <section class="hero-grid">
@@ -559,7 +638,10 @@ onMounted(async () => {
       <template v-else-if="activeView === 'production'">
         <section class="production-head">
           <div><p class="eyebrow">ORCHESTRATION</p><h2>章节生产控制台</h2><p>按冻结的章节规划顺序生成，每一章都等待人工接受。</p></div>
-          <button type="button" class="primary-button" :disabled="actionBusy || !workspace.chapterPlans.length" @click="createOrchestration">启动全书生产</button>
+          <div class="production-actions">
+            <button type="button" class="quiet-button" :disabled="actionBusy || !workspace.chapterPlans.length" @click="openWorkflowComposer">创建单章 Workflow</button>
+            <button type="button" class="primary-button" :disabled="actionBusy || !workspace.chapterPlans.length" @click="createOrchestration">启动全书生产</button>
+          </div>
         </section>
 
         <section class="production-layout">
@@ -689,6 +771,28 @@ onMounted(async () => {
         <label>作品类型<input v-model="createForm.genre" maxlength="128" placeholder="悬疑 / 奇幻 / 科幻" /></label>
         <label>故事前提<textarea v-model="createForm.premise" rows="5" maxlength="8000" placeholder="一句话描述主角、冲突与代价。"></textarea></label>
         <div class="modal-actions"><button type="button" class="quiet-button" @click="createOpen = false">取消</button><button type="submit" class="primary-button" :disabled="actionBusy">建立项目</button></div>
+      </form>
+    </div>
+
+    <div v-if="workflowOpen" class="modal-backdrop" @click.self="workflowOpen = false">
+      <form class="modal-card workflow-modal" @submit.prevent="enqueueChapterWorkflow">
+        <p class="eyebrow">CHAPTER WORKFLOW</p><h2>创建单章写作任务</h2><p>任务绑定当前 fresh Chapter Plan revision，并进入持久化异步队列。</p>
+        <label>章节规划
+          <select v-model="workflowForm.chapter_plan_id" required>
+            <option value="" disabled>选择 fresh Chapter Plan</option>
+            <option v-for="plan in workspace.chapterPlans" :key="plan.chapter_plan_id" :value="plan.chapter_plan_id" :disabled="plan.is_stale">CH {{ plan.chapter_number }} · {{ plan.title }} · r{{ plan.revision }}{{ plan.is_stale ? '（过期）' : '' }}</option>
+          </select>
+        </label>
+        <label>写作指令<textarea v-model="workflowForm.instruction" rows="5" required maxlength="8000"></textarea></label>
+        <div class="modal-grid">
+          <label>Provider<input v-model="workflowForm.provider" required /></label>
+          <label>Model<input v-model="workflowForm.model" required /></label>
+          <label>最低总分<input v-model.number="workflowForm.minimum_overall_score" type="number" min="0" max="100" /></label>
+          <label>最大修订轮数<input v-model.number="workflowForm.max_revision_rounds" type="number" min="0" max="5" /></label>
+          <label>队列优先级<input v-model.number="workflowForm.priority" type="number" min="-100" max="100" /></label>
+          <label class="check-field"><input v-model="workflowForm.auto_rewrite" type="checkbox" /> 自动 Rewrite</label>
+        </div>
+        <div class="modal-actions"><button type="button" class="quiet-button" @click="workflowOpen = false">取消</button><button type="submit" class="primary-button" :disabled="actionBusy">{{ actionBusy === 'enqueue-workflow' ? '提交中…' : '进入异步队列' }}</button></div>
       </form>
     </div>
   </div>

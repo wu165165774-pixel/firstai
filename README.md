@@ -10,7 +10,7 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - 正文候选导入、人工接受、不可变 Manuscript revision 与全小说 Orchestrator。
 - Session / Working / Long-term Memory、外部知识库、FAISS 与 Temporal Graph 双路检索。
 - 接受后事实通过事务 outbox 和逐存储 checkpoint 回写 Memory、Vector 与 Temporal Graph。
-- Vue 3 创作工作台：项目总览、章节生产、正文审核和事实投影状态。
+- Vue 3 创作工作台：项目库、规划领域编辑、Planner 候选审核接受、章节生产、正文审核和事实投影状态。
 
 ## 启动
 
@@ -46,4 +46,5 @@ npm run dev
 - [当前实现](docs/CURRENT_IMPLEMENTATION.md)
 - [产品与工程 Roadmap](docs/ROADMAP.md)
 - [Sprint 08E.1](docs/sprints/Sprint08E1.md)
+- [Sprint 08E.2](docs/sprints/Sprint08E2.md)
 - [Changelog](docs/CHANGELOG.md)
