@@ -5,6 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from loguru import logger
 
+from app.schema_migrations.service import SchemaMigrationService
+
+schema_migration_service = SchemaMigrationService()
+schema_migration_service.assert_no_newer_versions()
+
 from app.api.health import router as health_router
 from app.api.v1.agents import router as agent_router
 from app.api.v1.chat import router as chat_router
@@ -30,6 +35,15 @@ from app.version import APP_VERSION
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run NovelForge startup and shutdown tasks."""
+
+    schema_status = schema_migration_service.assert_runtime_compatible()
+    logger.info(
+        "Schema compatibility check complete: "
+        + ", ".join(
+            f"{item.authority}=v{item.current_version}:{item.state}"
+            for item in schema_status.authorities
+        )
+    )
 
     validate_auth_configuration()
 

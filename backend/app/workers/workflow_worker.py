@@ -3,6 +3,11 @@ from __future__ import annotations
 import asyncio
 import signal
 
+from app.schema_migrations.service import SchemaMigrationService
+
+schema_migration_service = SchemaMigrationService()
+schema_migration_service.assert_no_newer_versions()
+
 from app.agents.bootstrap import (
     agent_manager,
 )
@@ -16,6 +21,8 @@ async def run_worker() -> None:
     Run the standalone workflow worker until
     SIGINT or SIGTERM requests graceful stop.
     """
+
+    schema_migration_service.assert_runtime_compatible()
 
     executor = AsyncWorkflowExecutor(
         agent_manager,

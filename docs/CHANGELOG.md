@@ -3,6 +3,13 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.36
+
+- Added explicit schema version 1 contracts for all five authoritative SQLite databases, covering complete business table, column, and named-index sets.
+- Added read-only status, backup-gated offline upgrade, strict verification, per-authority migration ledgers, fixed checksums, and idempotent reruns.
+- Added historical schema bootstrap, transactional per-database rollback, incomplete-schema and tampered-ledger rejection, and newer-database fail-closed startup guards.
+- Added a PowerShell maintenance workflow that rehearses migration on an isolated restored copy before upgrading production authorities.
+
 ## v0.15.0-alpha.35
 
 - Added an offline multi-store backup CLI for the five authoritative SQLite databases and two FAISS index/mapping pairs.

@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.35
+* 当前代码版本：v0.15.0-alpha.36
 * 文档状态：当前实现快照
-* 快照日期：2026-08-16
-* 当前阶段：Sprint 09C.1 已完成，下一项为 Schema migration
+* 快照日期：2026-08-17
+* 当前阶段：Sprint 09C.2 已完成；下一项为 Sprint 09C.3 小说导出
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.35
+* 当前代码版本：v0.15.0-alpha.36
 * 文档状态：当前实现快照
-* 快照日期：2026-08-16
-* 当前阶段：Sprint 09C.1 已完成，下一项为 Schema migration
+* 快照日期：2026-08-17
+* 当前阶段：Sprint 09C.2 已完成；下一项为 Sprint 09C.3 小说导出
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3008,3 +3008,15 @@ SQLite 使用 Backup API 复制并执行 integrity check；FAISS 实际加载并
 当前自动化专项 `12/12`、Backend 全量回归 `472/472` 与 Frontend `18/18` 均通过；Python compileall、两套 Compose config 和 Frontend Docker/Vite 生产构建通过。专项包含 Windows bind mount 不支持目录原子重命名时的安全降级验证。
 
 真实演练 `sprint09c1-20260816T234604` 在 Backend/Worker 停写窗口创建并验证 9 文件快照，无 FAISS 重建项；dry-run 写入 0 文件，隔离恢复写入 9 文件。恢复文件哈希零差异，SQLite integrity 与 FAISS/mapping 数量一致性通过；服务恢复后 Backend/Frontend HTTP 200，Worker running 且 accepting。既有数据未删除或覆盖。验收记录保存在 `data/sprint09c1_acceptance.json`。下一项为 Sprint 09C.2 Schema migration。
+
+## v0.15.0-alpha.36 — Sprint 09C.2 显式 Schema Migration
+
+五个 SQLite authority 现在拥有显式 schema version 1、完整业务表/列/命名索引契约，以及逐库 `novelforge_schema_migrations` ledger。管理 CLI 提供只读 status、需要已验证 09C.1 备份与停写确认的 upgrade，以及包含 integrity、foreign key、schema 和 ledger checksum 的严格 verify。
+
+升级会先调用已发布 Storage 的兼容初始化补齐历史列/索引，再对全部五库预检；无法补齐的缺列不会被盖章。每库在独立事务中写 ledger 与 `PRAGMA user_version=1`，失败回滚，重复执行幂等。由于 SQLite 没有跨库事务，中断后通过 ledger 续跑或从完整维护前备份恢复，不虚构跨库原子性。
+
+Backend/Worker 在加载业务模块前拒绝高于程序支持版本的数据库，并在启动阶段验证 v0/v1 契约；v0 在本次兼容窗口仍可运行。标准脚本先从同一备份恢复隔离副本并完成 upgrade/verify，成功后才迁移生产五库。
+
+专项 `10/10`、Authentication `6/6`、Worker `9/9`、Frontend `18/18` 通过；Backend 全量在迁移前与生产 v1 迁移后分别 `482/482` 通过。Backend、Frontend、Worker 生产镜像构建成功。
+
+真实维护窗口使用备份 `sprint09c2-20260817T002047`，完整快照 9 个文件；隔离副本和生产五库均由 v0 升级到 v1 并严格 verify。所有库 ledger/checksum 有效、integrity 为 `ok`、foreign-key error 为 0。迁移前后业务表摘要一致，只有 Worker 重启按设计新增一条运行时注册记录；既有数据未删除或覆盖。服务恢复后 Backend/Frontend HTTP 200、OpenAPI `0.15.0-alpha.36` 且 Worker 正常注册。完整状态见 `docs/sprints/Sprint09C2.md`，验收记录保存在 `data/sprint09c2_acceptance.json`。下一项为 Sprint 09C.3 小说导出。

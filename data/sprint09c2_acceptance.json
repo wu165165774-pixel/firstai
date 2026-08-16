@@ -1,0 +1,81 @@
+{
+  "sprint": "09C.2",
+  "version": "0.15.0-alpha.36",
+  "recorded_at": "2026-08-17T00:29:09+08:00",
+  "tests": {
+    "schema_migrations": {
+      "ran": 10,
+      "passed": 10,
+      "duration_seconds": 3.806
+    },
+    "authentication": {
+      "ran": 6,
+      "passed": 6
+    },
+    "standalone_worker": {
+      "ran": 9,
+      "passed": 9
+    },
+    "backend_full_before_migration": {
+      "ran": 482,
+      "passed": 482,
+      "duration_seconds": 152.194
+    },
+    "backend_full_after_production_v1_migration": {
+      "ran": 482,
+      "passed": 482,
+      "duration_seconds": 47.187
+    },
+    "frontend": {
+      "ran": 18,
+      "passed": 18
+    },
+    "python_compileall": true,
+    "powershell_migration_script_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "backend_production_image_build": true,
+    "frontend_production_image_build": true,
+    "worker_production_image_build": true,
+    "git_diff_check": true
+  },
+  "migration_drill": {
+    "backup_id": "sprint09c2-20260817T002047",
+    "application_version": "0.15.0-alpha.36",
+    "checked_files": 9,
+    "total_bytes": 1541306,
+    "rebuild_required": [],
+    "isolated_restore_executed": true,
+    "isolated_restored_files": 9,
+    "isolated_upgrade_verified": true,
+    "production_upgrade_verified": true,
+    "schema_target_version": 1,
+    "authorities": [
+      "novels",
+      "workflow",
+      "memory",
+      "external_knowledge",
+      "temporal_graph"
+    ],
+    "all_user_versions": 1,
+    "all_ledger_versions": 1,
+    "all_ledger_checksums_valid": true,
+    "all_contracts_valid": true,
+    "all_integrity_checks_ok": true,
+    "foreign_key_errors": 0,
+    "business_tables_equal_except_runtime_worker_registry": true,
+    "expected_runtime_change": "one worker registration added after restart",
+    "production_data_overwritten": false,
+    "existing_data_deleted": false
+  },
+  "runtime": {
+    "openapi_version": "0.15.0-alpha.36",
+    "backend_status": 200,
+    "frontend_status": 200,
+    "live_workers": 1
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "result": "PASS"
+}
