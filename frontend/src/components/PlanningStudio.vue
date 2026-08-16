@@ -9,6 +9,7 @@ import {
   plannerGeneratePayload,
   planningPayload,
 } from "../lib/planning.js";
+import { promptRevisionSummary } from "../lib/prompts.js";
 
 const props = defineProps({
   novelId: { type: String, required: true },
@@ -24,6 +25,9 @@ const busy = ref("");
 const instruction = ref("");
 const generated = ref(null);
 const candidateText = ref("");
+const generatedPromptRevisions = computed(() =>
+  promptRevisionSummary(generated.value?.metadata),
+);
 
 const config = computed(() => PLANNING_TARGETS[target.value]);
 const selectedArc = computed(() =>
@@ -317,6 +321,7 @@ watch(
             <b>persisted = {{ generated.persisted }}</b>
             <span>{{ generated.model }} · {{ Math.round(generated.latency_ms || 0) }} ms</span>
             <small>{{ generated.usage?.total_tokens || 0 }} tokens · context {{ generated.metadata?.planner_context_chars || '—' }} chars</small>
+            <small v-if="generatedPromptRevisions">Prompt {{ generatedPromptRevisions }}</small>
           </div>
           <label class="editor-field candidate-json">候选 JSON（可在接受前修改）
             <textarea v-model="candidateText" rows="18" spellcheck="false"></textarea>

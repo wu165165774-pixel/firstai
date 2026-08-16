@@ -521,6 +521,22 @@ class ConsistencyAnalyzeTests(ConsistencyFixture, unittest.IsolatedAsyncioTestCa
         self.assertFalse(result.persisted)
         self.assertEqual(result.conflicts[0].conflict_type, "relationship_conflict")
         self.assertEqual(result.usage.total_tokens, 150)
+        request = self.llm.chat.await_args.args[1]
+        prompt_ids = [
+            item["prompt_id"]
+            for item in request.metadata["prompt_provenance"]
+        ]
+        self.assertEqual(
+            prompt_ids,
+            [
+                "consistency.fact_extraction.system",
+                "consistency.fact_extraction.request",
+            ],
+        )
+        self.assertEqual(
+            result.metadata["prompt_provenance"],
+            request.metadata["prompt_provenance"],
+        )
 
     async def test_request_chapter_overrides_extractor_coordinate(self) -> None:
         candidate = self.relationship_fact(

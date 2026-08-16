@@ -2929,3 +2929,33 @@ Real Qwen Provider probe passed
 ```
 
 验收记录保存在 `data/sprint09b1_acceptance.json`；既有业务与验收数据库未删除。下一项为 Sprint 09B.2 Prompt revision 与可审计选择，OpenAI/Claude/DashScope 的新增适配在后续独立子 Sprint 实施。
+
+## v0.15.0-alpha.33 — Sprint 09B.2 Prompt revision 与可审计选择
+
+代码内 Prompt Registry 为 Novel、Character、World、Plot、Chapter、Review、Rewrite、Planner、Consistency fact extraction 和 Memory extraction 注册 20 个稳定 Prompt identity。每个 identity 支持多个不可变 revision、显式 revision 解析和确定性的 current revision；`GET /api/v1/prompts` 只返回 ID、分类、描述与 revision 列表，不返回 Prompt 正文。
+
+每次 Agent LLM 调用记录两条 provenance：实际 system prompt 的 revision/SHA-256，以及包含 Canon、Grounding、Memory、External Knowledge、用户指令等最终 provider-visible messages 的 canonical request revision/SHA-256。Agent 边界会丢弃请求 metadata 和 Provider 响应中同名的伪造 provenance，再写入服务端计算结果。Planner response 与 Workflow step metadata 继承该记录；Workflow 原有 JSON 持久化路径因此无需新表或 schema migration 即可跨重启保留。
+
+Consistency fact extraction 与 Memory extraction 不经过 Agent，已分别直接接入相同 provenance。Consistency analysis response 返回记录；LLM 提取出的 Memory 在 metadata 中持久保存对应 system/request revision 与摘要。摘要不包含 Prompt、正文、key 或 endpoint 原文。
+
+Vue Planner candidate 区与 Workflow Inspector 聚合显示 `prompt_id@revision`，用于作者核对实际选择；界面不能编辑或伪造 revision。在线 Prompt 编辑、数据库 Prompt 表和运行中热替换均不属于本 Sprint。
+
+自动化与运行验证：
+
+```text
+6/6 Prompt Catalog focused tests passed
+18/18 Consistency tests passed
+15/15 Memory Lifecycle tests passed
+35/35 Planner tests passed
+25/25 Chapter Workflow tests passed
+7/7 Agent tests passed
+6/6 Authentication tests passed
+18/18 frontend tests passed
+453/453 backend full regression passed in 92.618s
+Python compileall passed
+Frontend Docker/Vite production build passed (16 BuildKit steps)
+```
+
+真实 `qwen3:8b` 验收复用保留小说 `85c4dff6-7530-459f-a3f7-1eaf34fc5c76`，生成 Novel Plan candidate 使用 3747 tokens、约 33.0 秒并以 `finish_reason=stop` 完成。响应包含 `agent.planner.system@r1` 与 `agent.planner.request@r1` 两条 64 位摘要，最终组装 request 为 6509 字符；`persisted=false`，生成前后 Novel Plan revision 均为 2。验收没有接受 candidate、没有删除既有数据。
+
+验收记录保存在 `data/sprint09b2_acceptance.json`。下一项为 Sprint 09B.3 OpenAI、Claude 与 DashScope Provider 适配。

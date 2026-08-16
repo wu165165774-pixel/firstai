@@ -179,6 +179,7 @@ class ConsistencyAnalyzeResult(ConsistencyCheckResult):
     finish_reason: str | None = None
     usage: TokenUsage | None = None
     latency_ms: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConsistencyConstraintResponse(BaseModel):

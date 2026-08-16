@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import PlanningStudio from "./components/PlanningStudio.vue";
 import { ApiError, api, getAccessToken, setAccessToken } from "./lib/api.js";
+import { promptRevisionSummary } from "./lib/prompts.js";
 import {
   canImportWorkflow,
   chapterTitle,
@@ -105,6 +106,13 @@ const approvedRevision = computed(() =>
 );
 const selectedProvider = computed(() =>
   providerCatalog.value.find((item) => item.name === workflowForm.provider),
+);
+const selectedRunPromptRevisions = computed(() =>
+  promptRevisionSummary(
+    ...(selectedRun.value?.result?.workflow_steps || []).map(
+      (step) => step.metadata,
+    ),
+  ),
 );
 
 function announce(message, tone = "info") {
@@ -756,6 +764,7 @@ onMounted(async () => {
               <h2>{{ selectedRun.run_id.slice(0, 12) }}</h2>
               <p>{{ selectedRun.result?.review_report?.summary || selectedRun.error || "运行详情" }}</p>
               <dl><div><dt>状态</dt><dd>{{ statusLabel(selectedRun.execution_status) }}</dd></div><div><dt>质量分</dt><dd>{{ selectedRun.result?.quality_scores?.overall ?? "—" }}</dd></div><div><dt>事实候选</dt><dd>{{ selectedRun.result?.review_report?.candidate_facts?.length || 0 }}</dd></div><div><dt>总 tokens</dt><dd>{{ selectedRun.result?.usage?.total_tokens || 0 }}</dd></div></dl>
+              <small v-if="selectedRunPromptRevisions">Prompt {{ selectedRunPromptRevisions }}</small>
             </article>
           </aside>
         </section>

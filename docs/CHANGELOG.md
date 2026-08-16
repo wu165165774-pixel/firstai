@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.33
+
+- Added a revisioned Prompt catalog with deterministic current/explicit revision resolution for Agent, Consistency, and Memory prompt identities.
+- Recorded trusted system-prompt and fully assembled provider-visible request SHA-256 provenance without exposing prompt content.
+- Propagated prompt provenance through Agent and Planner results, persisted Workflow step metadata, Consistency analysis responses, and extracted Memory metadata.
+- Replaced client/provider-supplied provenance at the Agent boundary so audit identity cannot be forged through request or response metadata.
+- Displayed selected Prompt revisions in Planner candidate and Workflow inspector views, with backend/frontend regression and real Qwen candidate-only acceptance.
+
 ## v0.15.0-alpha.32
 
 - Added a backward-compatible Provider catalog that reports capabilities and distinguishes registered, configured, and currently available states.

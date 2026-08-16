@@ -1,0 +1,48 @@
+{
+  "sprint": "09B.2",
+  "version": "0.15.0-alpha.33",
+  "recorded_at": "2026-08-16T00:33:21+08:00",
+  "tests": {
+    "prompt_catalog": {"ran": 6, "passed": 6},
+    "consistency": {"ran": 18, "passed": 18},
+    "memory_lifecycle": {"ran": 15, "passed": 15},
+    "planner": {"ran": 35, "passed": 35},
+    "chapter_workflow": {"ran": 25, "passed": 25},
+    "agents": {"ran": 7, "passed": 7},
+    "authentication": {"ran": 6, "passed": 6},
+    "frontend": {"ran": 18, "passed": 18},
+    "backend_full": {"ran": 453, "passed": 453, "duration_seconds": 92.618}
+  },
+  "runtime": {
+    "openapi_version": "0.15.0-alpha.33",
+    "prompt_catalog_registered": true,
+    "prompt_count": 20,
+    "novel_id": "85c4dff6-7530-459f-a3f7-1eaf34fc5c76",
+    "provider": "qwen_local",
+    "model": "qwen3:8b",
+    "finish_reason": "stop",
+    "total_tokens": 3747,
+    "latency_ms": 33015.16,
+    "persisted": false,
+    "plan_revision_before": 2,
+    "plan_revision_after": 2,
+    "prompt_provenance": [
+      {
+        "prompt_id": "agent.planner.system",
+        "revision": 1,
+        "sha256_chars": 64,
+        "rendered_chars": 1255
+      },
+      {
+        "prompt_id": "agent.planner.request",
+        "revision": 1,
+        "sha256_chars": 64,
+        "rendered_chars": 6509
+      }
+    ],
+    "frontend_image": "sha256:44b49362eeb0b6fe1412bb3cfc357e15334de2c97bea935a877f0fb1d0f844de"
+  },
+  "prompt_content_recorded": false,
+  "existing_data_deleted": false,
+  "result": "PASS"
+}

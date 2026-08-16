@@ -587,6 +587,22 @@ class MemoryExtractorRegressionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(result), 1)
         mocked_add.assert_awaited_once()
+        request = extractor.llm_manager.chat.await_args.args[1]
+        saved = mocked_add.await_args.args[0]
+        self.assertEqual(
+            saved.metadata["prompt_provenance"],
+            request.metadata["prompt_provenance"],
+        )
+        self.assertEqual(
+            [
+                item["prompt_id"]
+                for item in saved.metadata["prompt_provenance"]
+            ],
+            [
+                "memory.extraction.system",
+                "memory.extraction.request",
+            ],
+        )
 
 
 class MemoryLifecycleApiTests(unittest.TestCase):

@@ -14,6 +14,7 @@ from app.api.v1.memory import router as memory_router
 from app.api.v1.retrieval import router as retrieval_router
 from app.api.v1.temporal_graph import router as temporal_graph_router
 from app.api.v1.providers import router as provider_router
+from app.api.v1.prompts import router as prompt_router
 from app.api.v1.workflows import router as workflow_router
 from app.config.settings import settings
 from app.core.exception_handler import novelforge_exception_handler
@@ -89,7 +90,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.32",
+    version="0.15.0-alpha.33",
     lifespan=lifespan,
 )
 
@@ -117,6 +118,13 @@ app.include_router(
 
 app.include_router(
     provider_router,
+    prefix="/api/v1",
+    tags=["LLM"],
+    dependencies=protected_dependencies,
+)
+
+app.include_router(
+    prompt_router,
     prefix="/api/v1",
     tags=["LLM"],
     dependencies=protected_dependencies,

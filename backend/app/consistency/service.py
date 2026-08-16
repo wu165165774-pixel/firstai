@@ -16,6 +16,7 @@ from app.novels.schemas import EntityResolveRequest, NovelEntity
 from app.novels.service import NovelProjectService
 from app.novels.storage import NovelProjectNotFoundError
 from app.planner.parser import PlannerOutputError, extract_json_object
+from app.prompts.bootstrap import prompt_registry
 from app.temporal_graph.storage import TemporalGraphStorage
 
 from .schemas import (
@@ -1111,27 +1112,44 @@ class ConsistencyEngine:
         payload: ConsistencyAnalyzeRequest,
     ) -> ConsistencyAnalyzeResult:
         self._validate_scope(novel_id, payload.user_id)
+        system_prompt = (
+            "You are a conservative structured fact extractor. "
+            "Output JSON only and never invent facts."
+        )
+        messages = [
+            ChatMessage(
+                role="system",
+                content=system_prompt,
+            ),
+            ChatMessage(
+                role="user",
+                content=self._extraction_instruction(
+                    payload.content,
+                    payload.chapter_number,
+                ),
+            ),
+        ]
+        prompt_provenance = [
+            prompt_registry.provenance(
+                "consistency.fact_extraction.system",
+                system_prompt,
+            ),
+            prompt_registry.request_provenance(
+                "consistency.fact_extraction.request",
+                messages,
+            ),
+        ]
+        serialized_provenance = [
+            item.model_dump()
+            for item in prompt_provenance
+        ]
+
         response = await self.llm_manager.chat(
             payload.provider,
             ChatRequest(
                 provider=payload.provider,
                 model=payload.model,
-                messages=[
-                    ChatMessage(
-                        role="system",
-                        content=(
-                            "You are a conservative structured fact extractor. "
-                            "Output JSON only and never invent facts."
-                        ),
-                    ),
-                    ChatMessage(
-                        role="user",
-                        content=self._extraction_instruction(
-                            payload.content,
-                            payload.chapter_number,
-                        ),
-                    ),
-                ],
+                messages=messages,
                 reasoning_effort=payload.reasoning_effort,
                 temperature=payload.temperature,
                 max_tokens=payload.max_tokens,
@@ -1139,6 +1157,7 @@ class ConsistencyEngine:
                     "user_id": payload.user_id,
                     "novel_id": novel_id,
                     "consistency_stage": "candidate_fact_extraction",
+                    "prompt_provenance": serialized_provenance,
                 },
             ),
         )
@@ -1177,6 +1196,10 @@ class ConsistencyEngine:
             finish_reason=response.finish_reason,
             usage=response.usage,
             latency_ms=response.latency_ms,
+            metadata={
+                **dict(response.metadata or {}),
+                "prompt_provenance": serialized_provenance,
+            },
         )
 
 

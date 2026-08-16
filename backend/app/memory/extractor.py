@@ -10,6 +10,7 @@ from app.llm.schemas import ChatMessage, ChatRequest
 
 from app.memory.manager import memory_manager
 from app.memory.schemas import MemoryItem, MemoryType
+from app.prompts.bootstrap import prompt_registry
 
 
 EXTRACTION_SYSTEM_PROMPT = """
@@ -225,6 +226,34 @@ class MemoryExtractor:
             f"query={query!r}"
         )
 
+        messages = [
+            ChatMessage(
+                role="system",
+                content=EXTRACTION_SYSTEM_PROMPT,
+            ),
+            ChatMessage(
+                role="user",
+                content=(
+                    "请从下面的用户输入中提取长期记忆。\n\n"
+                    f"用户输入：\n{query}"
+                ),
+            ),
+        ]
+        prompt_provenance = [
+            prompt_registry.provenance(
+                "memory.extraction.system",
+                EXTRACTION_SYSTEM_PROMPT,
+            ),
+            prompt_registry.request_provenance(
+                "memory.extraction.request",
+                messages,
+            ),
+        ]
+        serialized_provenance = [
+            item.model_dump()
+            for item in prompt_provenance
+        ]
+
         extraction_request = ChatRequest(
 
             provider=provider,
@@ -234,25 +263,11 @@ class MemoryExtractor:
             metadata={
                 "user_id": user_id,
                 "novel_id": novel_id,
-                "task": "memory_extraction"
+                "task": "memory_extraction",
+                "prompt_provenance": serialized_provenance,
             },
 
-            messages=[
-
-                ChatMessage(
-                    role="system",
-                    content=EXTRACTION_SYSTEM_PROMPT
-                ),
-
-                ChatMessage(
-                    role="user",
-                    content=(
-                        "请从下面的用户输入中提取长期记忆。\n\n"
-                        f"用户输入：\n{query}"
-                    )
-                )
-
-            ]
+            messages=messages,
 
         )
 
@@ -355,7 +370,8 @@ class MemoryExtractor:
                 "source": "chat",
                 "extractor": "llm",
                 "provider": provider,
-                "model": model
+                "model": model,
+                "prompt_provenance": serialized_provenance,
             })
 
             memory = MemoryItem(

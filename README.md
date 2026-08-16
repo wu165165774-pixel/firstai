@@ -13,6 +13,7 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - Vue 3 创作工作台：项目库、规划领域编辑、Planner 候选审核接受、章节生产、正文审核和事实投影状态。
 - 可选 Bearer 身份认证：令牌绑定固定用户、资源所有权隐藏和管理员运维门禁。
 - Provider 能力目录：区分注册、配置与实时可用状态，工作台按能力选择 Provider/Model。
+- Prompt Catalog：内部 LLM 调用记录不可伪造的 prompt revision 与最终渲染摘要，Planner/Workflow 在工作台展示所选版本。
 
 ## 启动
 
@@ -68,6 +69,8 @@ DEEPSEEK_MODEL=deepseek-chat
 
 空 key 表示未配置。`GET /api/v1/providers` 返回能力与配置状态但不发起网络请求；增加 `?probe=true&timeout_ms=3000` 才会并行执行有界健康探测。响应不会包含 key 或 base URL。工作台使用同一目录选择 Provider/Model，并在目录暂时不可访问时保留手工输入回退。
 
+`GET /api/v1/prompts` 返回内部 Prompt ID、当前 revision 和可用 revisions，不返回 Prompt 正文。Agent、Planner、Workflow、Consistency 与 Memory extraction 的结果 metadata 使用 `prompt_provenance` 记录所选 revision、最终渲染字符数和 SHA-256；摘要用于核对实际请求，不作为正文或配置存储。
+
 ## 前端开发
 
 ```powershell
@@ -88,4 +91,5 @@ npm run dev
 - [Sprint 08E.2](docs/sprints/Sprint08E2.md)
 - [Sprint 09A](docs/sprints/Sprint09A.md)
 - [Sprint 09B.1](docs/sprints/Sprint09B1.md)
+- [Sprint 09B.2](docs/sprints/Sprint09B2.md)
 - [Changelog](docs/CHANGELOG.md)

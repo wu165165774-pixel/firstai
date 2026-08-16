@@ -22,6 +22,7 @@ from app.memory.context import (
 from app.novels.context import (
     canon_context_builder,
 )
+from app.prompts.bootstrap import prompt_registry
 
 
 class NovelAgent(BaseAgent):
@@ -91,10 +92,16 @@ class NovelAgent(BaseAgent):
         context: AgentContext,
     ) -> AgentResult:
 
+        system_prompt = self._system_prompt()
+        system_provenance = prompt_registry.provenance(
+            f"agent.{self.name}.system",
+            system_prompt,
+        )
+
         messages: list[ChatMessage] = [
             ChatMessage(
                 role="system",
-                content=self._system_prompt(),
+                content=system_prompt,
             )
         ]
 
@@ -291,12 +298,28 @@ class NovelAgent(BaseAgent):
         request_metadata = dict(
             context.metadata
         )
+        request_metadata.pop(
+            "prompt_provenance",
+            None,
+        )
+
+        prompt_provenance = [
+            system_provenance,
+            prompt_registry.request_provenance(
+                f"agent.{self.name}.request",
+                messages,
+            ),
+        ]
 
         request_metadata.update(
             {
                 "user_id": context.user_id,
                 "novel_id": context.novel_id,
                 "agent": self.name,
+                "prompt_provenance": [
+                    item.model_dump()
+                    for item in prompt_provenance
+                ],
             }
         )
         request_metadata.update(memory_retrieval_metadata)
@@ -342,6 +365,10 @@ class NovelAgent(BaseAgent):
             {
                 "user_id": context.user_id,
                 "novel_id": context.novel_id,
+                "prompt_provenance": [
+                    item.model_dump()
+                    for item in prompt_provenance
+                ],
             }
         )
         response_metadata.update(memory_retrieval_metadata)
