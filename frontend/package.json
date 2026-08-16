@@ -1,7 +1,7 @@
 {
   "name": "novelforge-workbench",
   "private": true,
-  "version": "0.15.0-alpha.36",
+  "version": "0.15.0-alpha.37",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",

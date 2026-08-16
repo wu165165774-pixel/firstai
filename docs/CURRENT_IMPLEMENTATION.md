@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.36
+* 当前代码版本：v0.15.0-alpha.37
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 09C.2 已完成；下一项为 Sprint 09C.3 小说导出
+* 当前阶段：Sprint 09C 已完成；下一项为 Sprint 09D CI 与发布工程
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.36
+* 当前代码版本：v0.15.0-alpha.37
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 09C.2 已完成；下一项为 Sprint 09C.3 小说导出
+* 当前阶段：Sprint 09C 已完成；下一项为 Sprint 09D CI 与发布工程
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3020,3 +3020,13 @@ Backend/Worker 在加载业务模块前拒绝高于程序支持版本的数据�
 专项 `10/10`、Authentication `6/6`、Worker `9/9`、Frontend `18/18` 通过；Backend 全量在迁移前与生产 v1 迁移后分别 `482/482` 通过。Backend、Frontend、Worker 生产镜像构建成功。
 
 真实维护窗口使用备份 `sprint09c2-20260817T002047`，完整快照 9 个文件；隔离副本和生产五库均由 v0 升级到 v1 并严格 verify。所有库 ledger/checksum 有效、integrity 为 `ok`、foreign-key error 为 0。迁移前后业务表摘要一致，只有 Worker 重启按设计新增一条运行时注册记录；既有数据未删除或覆盖。服务恢复后 Backend/Frontend HTTP 200、OpenAPI `0.15.0-alpha.36` 且 Worker 正常注册。完整状态见 `docs/sprints/Sprint09C2.md`，验收记录保存在 `data/sprint09c2_acceptance.json`。下一项为 Sprint 09C.3 小说导出。
+
+## v0.15.0-alpha.37 — Sprint 09C.3 小说导出
+
+新增 `GET /api/v1/novels/{novel_id}/export`，在内存中生成确定性 ZIP，不在服务端落地导出文件。包内包含当前 Project、Story Bible、Canonical Entity Registry、Novel Plan、Story Arc、Chapter Plan，以及仅显式接受的 Manuscript 正文和来源 revision 元数据；草稿、superseded revision 与未接受候选不会进入导出。
+
+`manifest.json` 声明格式版本、应用版本、小说/规划 revision、内容选择规则和计数，并为 manifest 之外每个成员记录字节数与 SHA-256；响应头提供 manifest 自身 SHA-256。固定 ZIP 时间戳、排序和 JSON 序列化使相同 authority 快照产生完全相同的 archive bytes。导出前后重新采集所有相关聚合 revision 指纹，并发修改返回 HTTP 409；接受正文内容与冻结 hash 不一致时 fail closed。
+
+鉴权继续由既有 Bearer 中间件按 `novel_id` 执行，其他用户看到 HTTP 404；所有领域读取都显式限定同一 novel。Vue 工作台提供“导出小说”下载按钮并复用会话 Bearer token。Export 专项 `7/7`、Authentication `7/7`、Backend 全量 `490/490`、Frontend `19/19` 通过，Backend/Frontend/Worker 生产镜像构建成功。
+
+真实生产 drill 对已有 2 章 accepted manuscript 的小说执行两次 HTTP 导出，每包 11 个成员；逐成员长度/hash、响应 manifest hash 和两次 archive bytes 全部一致，临时 ZIP 已自动清理。Backend HTTP 200、OpenAPI `0.15.0-alpha.37` 且导出路由存在；Frontend `.37` 镜像重建后 HTTP 200，生产 bundle 包含“导出小说”入口；生产数据未修改。完整状态见 `docs/sprints/Sprint09C3.md`，验收记录保存在 `data/sprint09c3_acceptance.json`。Sprint 09C 已完成，下一项为 Sprint 09D CI 与发布工程。

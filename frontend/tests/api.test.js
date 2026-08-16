@@ -125,3 +125,34 @@ test("configured access token is sent as a bearer header", async (context) => {
   const identity = await api.identity();
   assert.equal(identity.user_id, "writer");
 });
+
+test("novel export downloads a named archive with verification metadata", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+    setAccessToken("", { persist: false });
+  });
+  setAccessToken("export-session-secret", { persist: false });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/novels/n1/export");
+    assert.equal(options.headers.get("Authorization"), "Bearer export-session-secret");
+    return new Response(new Uint8Array([80, 75, 3, 4]), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": 'attachment; filename="novelforge-n1.zip"',
+        "X-NovelForge-Manifest-SHA256": "abc123",
+        "X-NovelForge-Accepted-Chapters": "7",
+      },
+    });
+  };
+
+  const result = await api.exportNovel("n1");
+  assert.equal(result.filename, "novelforge-n1.zip");
+  assert.equal(result.manifestSha256, "abc123");
+  assert.equal(result.acceptedChapterCount, 7);
+  assert.deepEqual(
+    [...new Uint8Array(await result.blob.arrayBuffer())],
+    [80, 75, 3, 4],
+  );
+});

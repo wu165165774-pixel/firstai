@@ -3,6 +3,13 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.37
+
+- Added deterministic, in-memory novel ZIP exports containing current Project, Story Bible, entity registry, Novel Plan, Story Arcs, Chapter Plans, and accepted Manuscript only.
+- Added a versioned manifest with per-member byte counts and SHA-256 hashes, accepted-source revision provenance, and an out-of-band manifest checksum response header.
+- Added optimistic snapshot conflict detection, accepted-content integrity validation, strict novel/user isolation, and candidate Manuscript exclusion.
+- Added an authenticated workbench download action and a production HTTP export drill that verifies every member and repeat-download determinism without retaining temporary archives.
+
 ## v0.15.0-alpha.36
 
 - Added explicit schema version 1 contracts for all five authoritative SQLite databases, covering complete business table, column, and named-index sets.

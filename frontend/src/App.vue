@@ -267,6 +267,30 @@ async function loadWorkspace() {
   }
 }
 
+async function exportNovel() {
+  if (!selectedNovelId.value) return;
+  actionBusy.value = "export";
+  try {
+    const result = await api.exportNovel(selectedNovelId.value);
+    const url = URL.createObjectURL(result.blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = result.filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    announce(
+      `已导出 ${result.acceptedChapterCount} 章接受正文与当前规划`,
+      "success",
+    );
+  } catch (error) {
+    explainError(error);
+  } finally {
+    actionBusy.value = "";
+  }
+}
+
 async function selectProject(novelId) {
   selectedNovelId.value = novelId;
   localStorage.setItem("novelforge.novelId", novelId);
@@ -609,6 +633,9 @@ onMounted(async () => {
         </div>
         <div class="topbar-actions">
           <span :class="['connection-pill', engineStatus]"><i></i> {{ engineStatus === "online" ? "本地引擎在线" : engineStatus === "offline" ? "本地引擎离线" : "检测本地引擎" }}</span>
+          <button type="button" class="quiet-button" :disabled="actionBusy === 'export' || !selectedNovelId" @click="exportNovel">
+            {{ actionBusy === "export" ? "导出中…" : "导出小说" }}
+          </button>
           <button type="button" class="quiet-button" :disabled="loadingWorkspace" @click="loadWorkspace">
             {{ loadingWorkspace ? "同步中…" : "同步数据" }}
           </button>

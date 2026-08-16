@@ -8,12 +8,17 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.api.v1 import novels as novels_api
+from app.api.v1 import exports as exports_api
 from app.config.settings import settings
 from app.core.auth import configured_principals
 from app.main import app
 from app.memory.manager import memory_manager
 from app.memory.schemas import MemoryItem, MemoryType
 from app.memory.storage.sqlite import SQLiteMemoryStorage
+from app.manuscripts.service import ManuscriptService
+from app.manuscripts.storage import ManuscriptStorage
+from app.novel_exports.service import NovelExportService
+from app.novels.schemas import NovelProjectCreate
 from app.novels.service import NovelProjectService
 from app.novels.storage import NovelProjectStorage
 from app.workflows.schemas import ChapterWorkflowRequest
@@ -28,6 +33,13 @@ class AuthenticationApiTests(unittest.TestCase):
         self.previous_novel_service = novels_api.service
         novels_api.service = NovelProjectService(
             NovelProjectStorage(f"{self.temp_dir.name}/novels.db")
+        )
+        self.previous_export_service = exports_api.service
+        exports_api.service = NovelExportService(
+            novels_api.service,
+            ManuscriptService(
+                ManuscriptStorage(f"{self.temp_dir.name}/novels.db")
+            ),
         )
         self.previous_workflow_db = os.environ.get("NOVELFORGE_WORKFLOW_DB_PATH")
         os.environ["NOVELFORGE_WORKFLOW_DB_PATH"] = (
@@ -60,6 +72,7 @@ class AuthenticationApiTests(unittest.TestCase):
         settings.auth_enabled = self.previous_enabled
         settings.auth_tokens_json = self.previous_tokens
         novels_api.service = self.previous_novel_service
+        exports_api.service = self.previous_export_service
         if self.previous_workflow_db is None:
             os.environ.pop("NOVELFORGE_WORKFLOW_DB_PATH", None)
         else:
@@ -173,6 +186,28 @@ class AuthenticationApiTests(unittest.TestCase):
             "security",
             schema["paths"]["/api/v1/health"]["get"],
         )
+
+    def test_novel_export_is_hidden_from_other_users(self) -> None:
+        project = novels_api.service.create_project(
+            NovelProjectCreate(
+                user_id="auth-alpha",
+                title="Private export",
+                genre="test",
+                premise="authorization boundary",
+            )
+        )
+
+        hidden = self.client.get(
+            f"/api/v1/novels/{project.novel_id}/export",
+            headers=self.headers("beta-token-12345678901"),
+        )
+        self.assertEqual(hidden.status_code, 404)
+        owner = self.client.get(
+            f"/api/v1/novels/{project.novel_id}/export",
+            headers=self.headers("alpha-token-1234567890"),
+        )
+        self.assertEqual(owner.status_code, 200)
+        self.assertEqual(owner.headers["content-type"], "application/zip")
 
     def test_workflow_run_and_memory_ids_do_not_cross_user_boundaries(self) -> None:
         run = WorkflowRunStorage().create_run(

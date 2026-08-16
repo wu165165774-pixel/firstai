@@ -68,6 +68,40 @@ export async function request(path, options = {}) {
   return payload?.data ?? payload;
 }
 
+function attachmentFilename(response, fallback) {
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      // Fall through to the ASCII filename supplied by the backend.
+    }
+  }
+  return disposition.match(/filename="([^"]+)"/i)?.[1] || fallback;
+}
+
+export async function download(path, { fallbackFilename = "download.bin" } = {}) {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const response = await fetch(`${API_ROOT}${path}`, { headers });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new ApiError(errorMessage(payload, response.status), {
+      status: response.status,
+      detail: payload?.detail,
+    });
+  }
+  return {
+    blob: await response.blob(),
+    filename: attachmentFilename(response, fallbackFilename),
+    manifestSha256: response.headers.get("X-NovelForge-Manifest-SHA256") || "",
+    acceptedChapterCount: Number(
+      response.headers.get("X-NovelForge-Accepted-Chapters") || 0,
+    ),
+  };
+}
+
 const query = (values) => {
   const params = new URLSearchParams();
   Object.entries(values).forEach(([key, value]) => {
@@ -89,6 +123,10 @@ export const api = {
   createProject: (payload) =>
     request("/novels", { method: "POST", body: payload }),
   getProject: (novelId) => request(`/novels/${novelId}`),
+  exportNovel: (novelId) =>
+    download(`/novels/${novelId}/export`, {
+      fallbackFilename: `novelforge-${novelId}.zip`,
+    }),
   getBible: (novelId) => request(`/novels/${novelId}/story-bible`),
   updateBible: (novelId, payload) =>
     request(`/novels/${novelId}/story-bible`, { method: "PUT", body: payload }),

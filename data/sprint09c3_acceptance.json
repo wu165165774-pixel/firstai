@@ -1,0 +1,61 @@
+{
+  "sprint": "09C.3",
+  "version": "0.15.0-alpha.37",
+  "recorded_at": "2026-08-17T00:48:08+08:00",
+  "tests": {
+    "novel_exports": {
+      "ran": 7,
+      "passed": 7,
+      "duration_seconds": 4.009
+    },
+    "authentication": {
+      "ran": 7,
+      "passed": 7,
+      "duration_seconds": 4.280
+    },
+    "backend_full": {
+      "ran": 490,
+      "passed": 490,
+      "duration_seconds": 143.521
+    },
+    "frontend": {
+      "ran": 19,
+      "passed": 19
+    },
+    "python_compileall": true,
+    "powershell_export_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "backend_production_image_build": true,
+    "frontend_production_image_build": true,
+    "worker_production_image_build": true,
+    "git_diff_check": true
+  },
+  "production_export_drill": {
+    "novel_id": "e872414f-8e9b-48fb-95a1-1da63dc8a0e6",
+    "http_status": 200,
+    "format": "novelforge-novel-export",
+    "format_version": 1,
+    "file_count": 11,
+    "accepted_manuscript_chapters": 2,
+    "manifest_sha256": "24567e614930604c1c9eb45a3e9992742bbf351899f6d1f8655095f55b5cfcbf",
+    "all_member_lengths_verified": true,
+    "all_member_sha256_verified": true,
+    "manifest_response_hash_verified": true,
+    "repeat_manifest_identical": true,
+    "repeat_archive_bytes_identical": true,
+    "temporary_archives_removed": true,
+    "production_data_modified": false
+  },
+  "runtime": {
+    "openapi_version": "0.15.0-alpha.37",
+    "export_route_registered": true,
+    "backend_status": 200,
+    "frontend_status": 200,
+    "frontend_export_action_deployed": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "result": "PASS"
+}

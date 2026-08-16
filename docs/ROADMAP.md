@@ -32,13 +32,13 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.35 — Sprint 09C.1 离线一致备份与安全恢复基础
+v0.15.0-alpha.36 — Sprint 09C.2 显式 Schema Migration
 ```
 
 当前已验收、待发布目标：
 
 ```text
-v0.15.0-alpha.36 — Sprint 09C.2 显式 Schema Migration
+v0.15.0-alpha.37 — Sprint 09C.3 小说导出
 ```
 
 已完成的主干能力：
@@ -66,8 +66,8 @@ v0.15.0-alpha.36 — Sprint 09C.2 显式 Schema Migration
 下一开发项：
 
 ```text
-Sprint 09C.3 - 小说导出
-状态：待开发（09C.2 已完成）
+Sprint 09D - CI 与发布工程
+状态：待开发（09C 已完成）
 ```
 
 ## 3. 交付路线
@@ -92,7 +92,8 @@ Sprint 09C.3 - 小说导出
 | 09B | Provider 配置与 Prompt 版本 | 已完成 | Provider 能力/密钥状态、OpenAI/Claude/DashScope 适配与 Prompt revision 可审计 |
 | 09C.1 | 离线一致备份与安全恢复 | 已完成 | 五个 SQLite authority 与两组 FAISS 一致快照、严格校验、dry-run 和新目录恢复 |
 | 09C.2 | 显式 Schema Migration | 已完成 | 五库完整 schema 契约、版本 ledger、备份门禁、隔离演练、幂等升级和新版本拒绝 |
-| 09C | 迁移、备份与导出 | 进行中 | 多 SQLite/FAISS/Graph 一致快照、恢复演练、schema migration 与小说导出可验收 |
+| 09C.3 | 小说导出 | 已完成 | 按用户/小说隔离导出当前规划与 accepted manuscript；版本 manifest、逐文件 SHA-256、候选排除和确定性下载可验证 |
+| 09C | 迁移、备份与导出 | 已完成 | 多 SQLite/FAISS/Graph 一致快照、恢复演练、schema migration 与小说导出可验收 |
 | 09D | CI 与发布工程 | 待开发 | 自动回归、镜像构建、制品、升级/回滚和发布清单可验收 |
 | 09 | Provider、Prompt、鉴权与发布工程 | 进行中 | 09A-09D 全部完成后关闭该聚合阶段 |
 | 1.0 | 插件化与正式发布 | 待开发 | 插件边界、兼容策略、安装/禁用、升级和完整产品验收完成 |

@@ -221,6 +221,15 @@ app.include_router(
     dependencies=protected_dependencies,
 )
 
+from app.api.v1.exports import router as export_router
+
+app.include_router(
+    export_router,
+    prefix="/api/v1",
+    tags=["Export"],
+    dependencies=protected_dependencies,
+)
+
 from app.api.v1.orchestrations import router as orchestration_router
 
 app.include_router(
