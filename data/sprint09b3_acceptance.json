@@ -1,0 +1,73 @@
+{
+  "sprint": "09B.3",
+  "version": "0.15.0-alpha.34",
+  "recorded_at": "2026-08-16T22:52:40+08:00",
+  "tests": {
+    "provider_catalog": {"ran": 9, "passed": 9},
+    "cloud_provider_adapters": {"ran": 5, "passed": 5},
+    "qwen_reasoning": {"ran": 4, "passed": 4},
+    "agents": {"ran": 7, "passed": 7},
+    "planner": {"ran": 35, "passed": 35},
+    "frontend": {"ran": 18, "passed": 18},
+    "backend_full": {"ran": 460, "passed": 460, "duration_seconds": 111.535}
+  },
+  "runtime": {
+    "openapi_version": "0.15.0-alpha.34",
+    "provider_count": 5,
+    "catalog": [
+      {
+        "name": "claude",
+        "configured": false,
+        "available": false,
+        "health_error": "not_configured",
+        "default_model": "claude-sonnet-5"
+      },
+      {
+        "name": "dashscope",
+        "configured": false,
+        "available": false,
+        "health_error": "not_configured",
+        "default_model": "qwen-plus"
+      },
+      {
+        "name": "deepseek",
+        "configured": true,
+        "available": false,
+        "health_error": "health_check_failed",
+        "default_model": "deepseek-chat"
+      },
+      {
+        "name": "openai",
+        "configured": false,
+        "available": false,
+        "health_error": "not_configured",
+        "default_model": "gpt-5.6-luna"
+      },
+      {
+        "name": "qwen_local",
+        "configured": true,
+        "available": true,
+        "health_error": null,
+        "default_model": "qwen3:8b"
+      }
+    ],
+    "backend_image": "sha256:9a6a2cfccabbc9d3869ae3110857d76c85b9ea975d2888b057a1ddbcad02cae3",
+    "worker_image": "sha256:7f7056b99d38c50580e3fe33f3b74e78daeef48ce8b7723e66c8a406a4fbdad8",
+    "frontend_image": "sha256:44b49362eeb0b6fe1412bb3cfc357e15334de2c97bea935a877f0fb1d0f844de",
+    "frontend_root_status": 200,
+    "frontend_health_status": 200,
+    "frontend_api_proxy_status": 200,
+    "frontend_container_healthy": true,
+    "worker_running": true
+  },
+  "live_paid_cloud_generation": {
+    "openai": false,
+    "claude": false,
+    "dashscope": false,
+    "reason": "providers_not_configured"
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "existing_data_deleted": false,
+  "result": "PASS"
+}

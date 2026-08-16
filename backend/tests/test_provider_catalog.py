@@ -8,6 +8,9 @@ from app.llm.base import BaseChatProvider
 from app.llm.exceptions import ProviderConfigurationError
 from app.llm.manager import LLMManager
 from app.llm.providers.deepseek import DeepSeekProvider
+from app.llm.providers.openai_cloud import OpenAIProvider
+from app.llm.providers.claude import ClaudeProvider
+from app.llm.providers.dashscope import DashScopeProvider
 from app.llm.providers.qwen_local import QwenLocalProvider
 from app.llm.registry import ProviderRegistry
 from app.llm.schemas import (
@@ -121,6 +124,16 @@ class ProviderConfigurationTests(unittest.TestCase):
         self.old_deepseek_key = settings.deepseek_api_key
         self.old_deepseek_url = settings.deepseek_base_url
         self.old_deepseek_model = settings.deepseek_model
+        self.old_openai_key = settings.openai_api_key
+        self.old_openai_url = settings.openai_base_url
+        self.old_openai_model = settings.openai_model
+        self.old_claude_key = settings.claude_api_key
+        self.old_claude_url = settings.claude_base_url
+        self.old_claude_model = settings.claude_model
+        self.old_claude_max_tokens = settings.claude_max_tokens
+        self.old_dashscope_key = settings.dashscope_api_key
+        self.old_dashscope_url = settings.dashscope_base_url
+        self.old_dashscope_model = settings.dashscope_model
 
     def tearDown(self) -> None:
         settings.qwen_base_url = self.old_qwen_url
@@ -128,6 +141,16 @@ class ProviderConfigurationTests(unittest.TestCase):
         settings.deepseek_api_key = self.old_deepseek_key
         settings.deepseek_base_url = self.old_deepseek_url
         settings.deepseek_model = self.old_deepseek_model
+        settings.openai_api_key = self.old_openai_key
+        settings.openai_base_url = self.old_openai_url
+        settings.openai_model = self.old_openai_model
+        settings.claude_api_key = self.old_claude_key
+        settings.claude_base_url = self.old_claude_url
+        settings.claude_model = self.old_claude_model
+        settings.claude_max_tokens = self.old_claude_max_tokens
+        settings.dashscope_api_key = self.old_dashscope_key
+        settings.dashscope_base_url = self.old_dashscope_url
+        settings.dashscope_model = self.old_dashscope_model
 
     def test_qwen_uses_settings_and_normalizes_openai_path(self) -> None:
         settings.qwen_base_url = "http://example.test:11434"
@@ -155,13 +178,62 @@ class ProviderConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(provider.model, "deepseek-test")
 
+    def test_new_cloud_providers_require_keys(self) -> None:
+        cases = (
+            ("openai_api_key", OpenAIProvider),
+            ("claude_api_key", ClaudeProvider),
+            ("dashscope_api_key", DashScopeProvider),
+        )
+        for field, provider_type in cases:
+            with self.subTest(provider=provider_type.name):
+                setattr(settings, field, "")
+                with self.assertRaisesRegex(
+                    ProviderConfigurationError,
+                    "not configured",
+                ):
+                    provider_type()
+
+    def test_new_cloud_providers_use_configured_endpoints(self) -> None:
+        settings.openai_api_key = "test-openai-key"
+        settings.openai_base_url = "https://openai.example.test/v1"
+        settings.openai_model = "openai-test"
+        openai = OpenAIProvider()
+        self.assertEqual(
+            str(openai.client.base_url),
+            "https://openai.example.test/v1/",
+        )
+        self.assertEqual(openai.model, "openai-test")
+
+        settings.claude_api_key = "test-claude-key"
+        settings.claude_base_url = "https://claude.example.test"
+        settings.claude_model = "claude-test"
+        claude = ClaudeProvider()
+        self.assertEqual(
+            str(claude.client.base_url),
+            "https://claude.example.test",
+        )
+        self.assertEqual(claude.model, "claude-test")
+
+        settings.dashscope_api_key = "test-dashscope-key"
+        settings.dashscope_base_url = "https://dashscope.example.test/v1"
+        settings.dashscope_model = "dashscope-test"
+        dashscope = DashScopeProvider()
+        self.assertEqual(
+            str(dashscope.client.base_url),
+            "https://dashscope.example.test/v1/",
+        )
+        self.assertEqual(dashscope.model, "dashscope-test")
+
 
 class ProviderCatalogApiTests(unittest.TestCase):
     def test_catalog_is_backward_compatible_and_secret_free(self) -> None:
         response = TestClient(app).get("/api/v1/providers")
         self.assertEqual(response.status_code, 200)
         data = response.json()["data"]
-        self.assertEqual(data["providers"], ["deepseek", "qwen_local"])
+        self.assertEqual(
+            data["providers"],
+            ["claude", "dashscope", "deepseek", "openai", "qwen_local"],
+        )
         self.assertFalse(data["probed"])
         by_name = {item["name"]: item for item in data["catalog"]}
         self.assertEqual(
@@ -169,6 +241,36 @@ class ProviderCatalogApiTests(unittest.TestCase):
             bool(settings.deepseek_api_key.strip()),
         )
         self.assertTrue(by_name["qwen_local"]["configured"])
+        self.assertEqual(
+            by_name["openai"]["configured"],
+            all(
+                (
+                    settings.openai_api_key.strip(),
+                    settings.openai_base_url.strip(),
+                    settings.openai_model.strip(),
+                )
+            ),
+        )
+        self.assertEqual(
+            by_name["claude"]["configured"],
+            all(
+                (
+                    settings.claude_api_key.strip(),
+                    settings.claude_base_url.strip(),
+                    settings.claude_model.strip(),
+                )
+            ),
+        )
+        self.assertEqual(
+            by_name["dashscope"]["configured"],
+            all(
+                (
+                    settings.dashscope_api_key.strip(),
+                    settings.dashscope_base_url.strip(),
+                    settings.dashscope_model.strip(),
+                )
+            ),
+        )
         expected_fields = {
             "name",
             "kind",
@@ -184,6 +286,14 @@ class ProviderCatalogApiTests(unittest.TestCase):
             "health_error",
         }
         self.assertEqual(set(by_name["deepseek"]), expected_fields)
+        serialized = str(data)
+        for secret in (
+            settings.openai_api_key,
+            settings.claude_api_key,
+            settings.dashscope_api_key,
+        ):
+            if secret:
+                self.assertNotIn(secret, serialized)
         self.assertIn(
             by_name["deepseek"]["health_error"],
             {None, "not_configured", "health_check_failed", "health_check_timed_out"},

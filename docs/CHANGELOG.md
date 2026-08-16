@@ -3,6 +3,13 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.34
+
+- Added configurable OpenAI, Anthropic Claude, and Alibaba Cloud Model Studio/DashScope chat Provider adapters without changing business-layer contracts.
+- Added async non-streaming and SSE streaming mappings, token usage normalization, model overrides, and bounded non-billable Models API health probes.
+- Registered honest cloud capabilities and configuration state in the Provider catalog while keeping API keys and endpoints out of responses and logs.
+- Added official Anthropic SDK dependency, empty-key environment examples, 14 Provider-focused tests, full backend/frontend regression, and local Qwen availability verification.
+
 ## v0.15.0-alpha.33
 
 - Added a revisioned Prompt catalog with deterministic current/explicit revision resolution for Agent, Consistency, and Memory prompt identities.

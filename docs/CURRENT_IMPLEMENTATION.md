@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.13.0-alpha.1
+* 当前代码版本：v0.15.0-alpha.34
 * 文档状态：当前实现快照
-* 快照日期：2026-08-05
-* 当前阶段：长期记忆与 Vector RAG 基础能力已实现，混合检索整合进行中
+* 快照日期：2026-08-16
+* 当前阶段：Sprint 09B 已完成，下一项为迁移、备份与导出
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -27,8 +27,11 @@ FastAPI Chat API
 LLM Manager
     ↓
 Provider Registry
+    ├── Qwen Local Provider
     ├── DeepSeek Provider
-    └── Qwen Local Provider
+    ├── OpenAI Provider
+    ├── Claude Provider
+    └── DashScope Provider
             ↓
         Ollama
             ↓
@@ -110,10 +113,13 @@ FAISS 持久化索引
 
 ```text
 deepseek
+openai
+claude
+dashscope
 qwen_local
 ```
 
-DeepSeek Provider 框架已经存在，但尚未使用真实 DeepSeek API Key 完成正式验收。
+DeepSeek 已配置但当前运行环境不可达；OpenAI、Claude 与 DashScope 未配置 key，因此不宣称云端付费生成验收通过。
 
 ---
 
@@ -621,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.13.0-alpha.1
+* 当前代码版本：v0.15.0-alpha.34
 * 文档状态：当前实现快照
-* 快照日期：2026-08-05
-* 当前阶段：长期记忆与 Vector RAG 基础能力已实现，混合检索整合进行中
+* 快照日期：2026-08-16
+* 当前阶段：Sprint 09B 已完成，下一项为迁移、备份与导出
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -644,8 +650,11 @@ FastAPI Chat API
 LLM Manager
     ↓
 Provider Registry
+    ├── Qwen Local Provider
     ├── DeepSeek Provider
-    └── Qwen Local Provider
+    ├── OpenAI Provider
+    ├── Claude Provider
+    └── DashScope Provider
             ↓
         Ollama
             ↓
@@ -727,10 +736,13 @@ FAISS 持久化索引
 
 ```text
 deepseek
+openai
+claude
+dashscope
 qwen_local
 ```
 
-DeepSeek Provider 框架已经存在，但尚未使用真实 DeepSeek API Key 完成正式验收。
+DeepSeek 已配置但当前运行环境不可达；OpenAI、Claude 与 DashScope 未配置 key，因此不宣称云端付费生成验收通过。
 
 ---
 
@@ -2959,3 +2971,28 @@ Frontend Docker/Vite production build passed (16 BuildKit steps)
 真实 `qwen3:8b` 验收复用保留小说 `85c4dff6-7530-459f-a3f7-1eaf34fc5c76`，生成 Novel Plan candidate 使用 3747 tokens、约 33.0 秒并以 `finish_reason=stop` 完成。响应包含 `agent.planner.system@r1` 与 `agent.planner.request@r1` 两条 64 位摘要，最终组装 request 为 6509 字符；`persisted=false`，生成前后 Novel Plan revision 均为 2。验收没有接受 candidate、没有删除既有数据。
 
 验收记录保存在 `data/sprint09b2_acceptance.json`。下一项为 Sprint 09B.3 OpenAI、Claude 与 DashScope Provider 适配。
+
+## v0.15.0-alpha.34 — Sprint 09B.3 OpenAI / Claude / DashScope Provider 适配
+
+Provider Registry 新增 `openai`、`claude` 与 `dashscope`，与既有 `deepseek`、`qwen_local` 一起复用同一 `ChatRequest`、`ChatResponse`、streaming、Catalog 和 Prompt provenance 边界。云 key、base URL 与默认 model 只从 Settings/环境读取；Catalog 与日志均不输出 secret 或 endpoint。
+
+OpenAI adapter 使用异步 Chat Completions，并映射现代 `max_completion_tokens` 与 reasoning effort。DashScope 使用阿里云百炼官方支持的 OpenAI-compatible API，把 thinking 映射为 `enable_thinking`。Claude 使用官方异步 Messages SDK，确定性拆分 system 与对话消息、归一化 usage/finish reason，并拒绝缺少原生 content-block 语义的普通文本 tool message。三者均支持 SSE streaming，并通过非计费 Models API 接入既有有界健康探测。
+
+新增云 Provider 未配置 key 时保持 `registered=true`、`configured=false`，`probe=true` 返回 `available=false/not_configured` 且不实例化 client。当前运行探测确认本地 `qwen_local/qwen3:8b` 可用；DeepSeek 已配置但当前不可达；OpenAI、Claude、DashScope 均未配置，因此本 Sprint 不宣称付费云生成在线验收通过。
+
+自动化与运行验证：
+
+```text
+14/14 Provider focused tests passed
+4/4 Qwen reasoning tests passed
+7/7 Agent tests passed
+35/35 Planner tests passed
+18/18 frontend tests passed
+460/460 backend full regression passed in 111.535s
+Python compileall passed
+Docker Compose base + worker overlay config passed
+git diff --check passed
+Backend image with Anthropic SDK built successfully
+```
+
+完整状态见 `docs/sprints/Sprint09B3.md`，验收记录保存在 `data/sprint09b3_acceptance.json`。Sprint 09B 已完成，下一项为 Sprint 09C 迁移、备份与导出。

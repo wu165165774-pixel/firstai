@@ -32,18 +32,18 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.32 — Sprint 09B.1 Provider 能力与配置状态
+v0.15.0-alpha.33 — Sprint 09B.2 Prompt revision 与可审计选择
 ```
 
 当前已验收、待发布目标：
 
 ```text
-v0.15.0-alpha.33 — Sprint 09B.2 Prompt revision 与可审计选择
+v0.15.0-alpha.34 — Sprint 09B.3 OpenAI / Claude / DashScope Provider 适配
 ```
 
 已完成的主干能力：
 
-- FastAPI、Docker Compose、本地 Ollama/Qwen、DeepSeek Provider 框架。
+- FastAPI、Docker Compose、本地 Ollama/Qwen，以及 DeepSeek、OpenAI、Claude、DashScope 云 Provider 框架。
 - 专业 Agent：Novel、Character、World、Plot、Chapter、Rewrite、Review、Planner。
 - Chapter -> Review -> Rewrite -> Re-review 多轮质量工作流。
 - 持久化工作流、独立 Worker、队列策略、DLQ、超时、背压、恢复与运维观测。
@@ -66,7 +66,7 @@ v0.15.0-alpha.33 — Sprint 09B.2 Prompt revision 与可审计选择
 下一开发项：
 
 ```text
-Sprint 09B.3 - OpenAI / Claude / DashScope Provider 适配
+Sprint 09C - 迁移、备份与导出
 状态：待开发
 ```
 
@@ -89,7 +89,7 @@ Sprint 09B.3 - OpenAI / Claude / DashScope Provider 适配
 | 08E.1 | Vue 创作工作台基础 | 已完成 | Project 总览、生产运行、正文审核/接受、事实投影与 Compose/Nginx 运行闭环 |
 | 08E.2 | 规划编辑与候选审核 | 已发布 | Bible/Plan/Arc/Chapter 编辑、Planner candidate 审核接受和 Workflow 创建表单 |
 | 09A | 鉴权与多用户安全边界 | 已发布 | Bearer 身份、用户声明绑定、资源所有权隐藏、管理员运维门禁和工作台会话令牌可验收 |
-| 09B | Provider 配置与 Prompt 版本 | 进行中（09B.1/09B.2 已验收） | Provider 能力/密钥状态、OpenAI/Claude/DashScope 适配与 Prompt revision 可审计 |
+| 09B | Provider 配置与 Prompt 版本 | 已完成 | Provider 能力/密钥状态、OpenAI/Claude/DashScope 适配与 Prompt revision 可审计 |
 | 09C | 迁移、备份与导出 | 待开发 | 多 SQLite/FAISS/Graph 一致快照、恢复演练、schema migration 与小说导出可验收 |
 | 09D | CI 与发布工程 | 待开发 | 自动回归、镜像构建、制品、升级/回滚和发布清单可验收 |
 | 09 | Provider、Prompt、鉴权与发布工程 | 进行中 | 09A-09D 全部完成后关闭该聚合阶段 |

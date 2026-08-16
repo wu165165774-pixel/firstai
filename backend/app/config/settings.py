@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,31 @@ class Settings(BaseSettings):
     )
 
     deepseek_model: str = "deepseek-chat"
+
+    # OpenAI cloud API.
+    openai_api_key: str = ""
+
+    openai_base_url: str = "https://api.openai.com/v1"
+
+    openai_model: str = "gpt-5.6-luna"
+
+    # Anthropic Claude Messages API.
+    claude_api_key: str = ""
+
+    claude_base_url: str = "https://api.anthropic.com"
+
+    claude_model: str = "claude-sonnet-5"
+
+    claude_max_tokens: int = Field(default=4096, gt=0, le=128_000)
+
+    # Alibaba Cloud Model Studio OpenAI-compatible API (Beijing).
+    dashscope_api_key: str = ""
+
+    dashscope_base_url: str = (
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+
+    dashscope_model: str = "qwen-plus"
 
     # Local Qwen / Ollama OpenAI-compatible endpoint.
     qwen_base_url: str = "http://ollama:11434"
