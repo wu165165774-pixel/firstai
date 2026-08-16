@@ -1,0 +1,61 @@
+{
+  "sprint": "09C.1",
+  "version": "0.15.0-alpha.35",
+  "recorded_at": "2026-08-16T23:47:15+08:00",
+  "tests": {
+    "backup_restore": {
+      "ran": 12,
+      "passed": 12,
+      "duration_seconds": 1.861
+    },
+    "backend_full": {
+      "ran": 472,
+      "passed": 472,
+      "duration_seconds": 126.837
+    },
+    "frontend": {
+      "ran": 18,
+      "passed": 18
+    },
+    "python_compileall": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "frontend_production_build": true,
+    "powershell_drill_script_syntax": true,
+    "git_diff_check": true
+  },
+  "backup_restore_drill": {
+    "backup_id": "sprint09c1-20260816T234604",
+    "application_version": "0.15.0-alpha.35",
+    "format_version": 1,
+    "consistency_mode": "offline_required",
+    "source_layout": "novelforge-data-v1",
+    "checked_files": 9,
+    "total_bytes": 1541306,
+    "sqlite_files": 5,
+    "faiss_index_files": 2,
+    "faiss_mapping_files": 2,
+    "rebuild_required": [],
+    "verify_valid": true,
+    "restore_dry_run": true,
+    "dry_run_restored_files": 0,
+    "restore_executed": true,
+    "restored_files": 9,
+    "restored_hash_mismatches": 0,
+    "restored_sqlite_integrity": true,
+    "restored_faiss_mapping_consistency": true,
+    "production_data_overwritten": false,
+    "existing_data_deleted": false
+  },
+  "runtime": {
+    "openapi_version": "0.15.0-alpha.35",
+    "backend_status": 200,
+    "frontend_status": 200,
+    "worker_status": "running",
+    "worker_accepting_work": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "result": "PASS"
+}

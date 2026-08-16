@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.34
+* 当前代码版本：v0.15.0-alpha.35
 * 文档状态：当前实现快照
 * 快照日期：2026-08-16
-* 当前阶段：Sprint 09B 已完成，下一项为迁移、备份与导出
+* 当前阶段：Sprint 09C.1 已完成，下一项为 Schema migration
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.34
+* 当前代码版本：v0.15.0-alpha.35
 * 文档状态：当前实现快照
 * 快照日期：2026-08-16
-* 当前阶段：Sprint 09B 已完成，下一项为迁移、备份与导出
+* 当前阶段：Sprint 09C.1 已完成，下一项为 Schema migration
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -2996,3 +2996,15 @@ Backend image with Anthropic SDK built successfully
 ```
 
 完整状态见 `docs/sprints/Sprint09B3.md`，验收记录保存在 `data/sprint09b3_acceptance.json`。Sprint 09B 已完成，下一项为 Sprint 09C 迁移、备份与导出。
+
+## v0.15.0-alpha.35 — Sprint 09C.1 离线一致备份与安全恢复基础
+
+新增固定 authority allowlist 的离线备份 CLI，覆盖 `novels.db`、`workflow_runs.db`、`memory.db`、`external_knowledge.db`、`temporal_graph.db` 与两组 FAISS index/mapping。五个 SQLite 没有跨库事务锁，因此创建备份要求 Backend 与 Worker 同时停写，并在 Manifest 明确记录 `offline_required`，不宣称在线原子快照。
+
+SQLite 使用 Backup API 复制并执行 integrity check；FAISS 实际加载并校验 dimension、`ntotal` 与 ID mapping 数量。严格 Manifest 记录 SHA-256、文件大小与非敏感结构元数据，拒绝未知/缺失文件、路径穿越、符号链接、部分 FAISS 对和非法重建状态。
+
+恢复默认 dry-run，只允许 staging 后写入不存在的新目录，拒绝覆盖生产数据或已有目标。运维人员必须先恢复到隔离目录并验证，再通过受控部署切换。完整操作步骤和安全边界见 `docs/operations/BACKUP_RESTORE.md`。
+
+当前自动化专项 `12/12`、Backend 全量回归 `472/472` 与 Frontend `18/18` 均通过；Python compileall、两套 Compose config 和 Frontend Docker/Vite 生产构建通过。专项包含 Windows bind mount 不支持目录原子重命名时的安全降级验证。
+
+真实演练 `sprint09c1-20260816T234604` 在 Backend/Worker 停写窗口创建并验证 9 文件快照，无 FAISS 重建项；dry-run 写入 0 文件，隔离恢复写入 9 文件。恢复文件哈希零差异，SQLite integrity 与 FAISS/mapping 数量一致性通过；服务恢复后 Backend/Frontend HTTP 200，Worker running 且 accepting。既有数据未删除或覆盖。验收记录保存在 `data/sprint09c1_acceptance.json`。下一项为 Sprint 09C.2 Schema migration。

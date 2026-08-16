@@ -3,6 +3,14 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.35
+
+- Added an offline multi-store backup CLI for the five authoritative SQLite databases and two FAISS index/mapping pairs.
+- Added strict manifests with SHA-256, SQLite integrity/schema metadata, load-tested FAISS dimension/count metadata, and explicit rebuild state.
+- Added fail-closed path/layout validation, backup verification, dry-run-by-default restore, and new-directory-only recovery without in-place production overwrite.
+- Added a manifest-last finalization fallback for Windows bind mounts that reject atomic directory replacement.
+- Added backup/restore operator documentation and focused tests while centralizing the Backend application version.
+
 ## v0.15.0-alpha.34
 
 - Added configurable OpenAI, Anthropic Claude, and Alibaba Cloud Model Studio/DashScope chat Provider adapters without changing business-layer contracts.

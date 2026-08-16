@@ -24,6 +24,7 @@ from app.core.auth import authorize_request, validate_auth_configuration
 from app.fact_projection.service import fact_projection_service
 from app.rag.consistency import memory_index_consistency_service
 from app.knowledge.manager import external_knowledge_manager
+from app.version import APP_VERSION
 
 
 @asynccontextmanager
@@ -90,7 +91,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.15.0-alpha.34",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 

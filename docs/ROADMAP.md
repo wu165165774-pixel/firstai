@@ -32,13 +32,13 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.15.0-alpha.33 — Sprint 09B.2 Prompt revision 与可审计选择
+v0.15.0-alpha.34 — Sprint 09B.3 OpenAI / Claude / DashScope Provider 适配
 ```
 
 当前已验收、待发布目标：
 
 ```text
-v0.15.0-alpha.34 — Sprint 09B.3 OpenAI / Claude / DashScope Provider 适配
+v0.15.0-alpha.35 — Sprint 09C.1 离线一致备份与安全恢复基础
 ```
 
 已完成的主干能力：
@@ -66,8 +66,8 @@ v0.15.0-alpha.34 — Sprint 09B.3 OpenAI / Claude / DashScope Provider 适配
 下一开发项：
 
 ```text
-Sprint 09C - 迁移、备份与导出
-状态：待开发
+Sprint 09C.2 - Schema migration
+状态：待开发（09C.1 已完成）
 ```
 
 ## 3. 交付路线
@@ -90,7 +90,8 @@ Sprint 09C - 迁移、备份与导出
 | 08E.2 | 规划编辑与候选审核 | 已发布 | Bible/Plan/Arc/Chapter 编辑、Planner candidate 审核接受和 Workflow 创建表单 |
 | 09A | 鉴权与多用户安全边界 | 已发布 | Bearer 身份、用户声明绑定、资源所有权隐藏、管理员运维门禁和工作台会话令牌可验收 |
 | 09B | Provider 配置与 Prompt 版本 | 已完成 | Provider 能力/密钥状态、OpenAI/Claude/DashScope 适配与 Prompt revision 可审计 |
-| 09C | 迁移、备份与导出 | 待开发 | 多 SQLite/FAISS/Graph 一致快照、恢复演练、schema migration 与小说导出可验收 |
+| 09C.1 | 离线一致备份与安全恢复 | 已完成 | 五个 SQLite authority 与两组 FAISS 一致快照、严格校验、dry-run 和新目录恢复 |
+| 09C | 迁移、备份与导出 | 进行中 | 多 SQLite/FAISS/Graph 一致快照、恢复演练、schema migration 与小说导出可验收 |
 | 09D | CI 与发布工程 | 待开发 | 自动回归、镜像构建、制品、升级/回滚和发布清单可验收 |
 | 09 | Provider、Prompt、鉴权与发布工程 | 进行中 | 09A-09D 全部完成后关闭该聚合阶段 |
 | 1.0 | 插件化与正式发布 | 待开发 | 插件边界、兼容策略、安装/禁用、升级和完整产品验收完成 |
