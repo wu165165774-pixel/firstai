@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.backup.service import BackupError, BackupService
+from app.schema_version import CURRENT_SCHEMA_VERSION, LEGACY_SCHEMA_VERSION
 from app.version import APP_VERSION
 
 from .contracts import AUTHORITIES, SchemaAuthority
@@ -22,8 +23,8 @@ class SchemaMigrationError(RuntimeError):
 
 
 class SchemaMigrationService:
-    CURRENT_VERSION = 1
-    LEGACY_VERSION = 0
+    CURRENT_VERSION = CURRENT_SCHEMA_VERSION
+    LEGACY_VERSION = LEGACY_SCHEMA_VERSION
     LEDGER_TABLE = "novelforge_schema_migrations"
     MIGRATION_NAME = "baseline_explicit_schema_version"
 

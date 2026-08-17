@@ -9,6 +9,7 @@
 - `.github/workflows/ci.yml`：master push、Pull Request 和手工触发时执行 Backend 全量测试、Frontend 测试/构建/bundle 校验、两套 Compose 解析以及 Backend/Frontend/Worker 镜像构建。
 - `.github/workflows/release.yml`：只对 `v*` tag 或显式指定的既有 tag 执行完整门禁，生成源码 ZIP、三镜像归档和 `SHA256SUMS`，上传 Actions artifact 并创建或更新 GitHub Release。
 - Release workflow 不推送容器 registry；镜像以 `docker save` 归档交付，避免隐式依赖未配置的 registry 凭据。
+- Backend/Worker 从完整 Python lock 安装，Frontend 使用 lockfile v3 和 `npm ci`；基础镜像使用 digest、Action 使用完整 commit。更新流程见 `docs/operations/DEPENDENCY_LOCKS.md`。
 
 ## 版本门禁
 
@@ -23,6 +24,14 @@ frontend/package-lock.json packages[""].version
 ```
 
 tag 必须是 `v{version}`，且 `data/sprint*_acceptance.json` 至少有一份同版本 `result=PASS` 记录。Compose build context 必须是仓库相对路径。任一条件不满足都拒绝制品生成。
+
+发布校验还要求：
+
+- Backend lock 精确、唯一、排序并覆盖全部直接依赖，`requirements.txt` 只能转发到 lock。
+- Frontend lockfile v3 的 registry 包都包含 version/resolved/integrity。
+- Python、Node、Nginx、Ollama 镜像均固定 SHA-256 digest。
+- 所有 GitHub Action 均固定完整 40 位 commit。
+- `release-compatibility.json` 的版本与 schema 常量一致，所有未知路径 fail closed。
 
 ## 制品
 
@@ -46,18 +55,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\sprint09d_release_
 
 1. 阅读目标 release notes、`CURRENT_IMPLEMENTATION.md` 和相关 Sprint 文档。
 2. 执行 Sprint 09C.1 离线备份/恢复演练，保留 `BACKUP_ID`；涉及 schema 版本变化时先在隔离副本执行迁移。
-3. 使用 `SHA256SUMS` 验证下载制品，运行 release CLI `verify` 验证源码 ZIP 内部 manifest。
-4. 加载镜像归档：`docker load -i novelforge-v{version}-images.tar`；若为 `.gz`，先在可信目录解压。
-5. 停止 Worker writer，再停止 Backend；应用目标 Compose/环境配置。
-6. 启动 Backend，验证 schema compatibility、OpenAPI 版本和 health；再启动 Worker 与 Frontend。
-7. 执行目标版本 smoke/drill，确认 Worker accepting、Frontend 200，最后才结束维护窗口。
+3. 使用目标 release 的 `assess --operation upgrade` 对来源应用版本和 schema 版本判定；只有 `direct`/`migrate` 可继续，`blocked` 必须停止。
+4. 使用 `SHA256SUMS` 验证下载制品，运行 release CLI `verify` 验证源码 ZIP 内部 manifest。
+5. 加载镜像归档：`docker load -i novelforge-v{version}-images.tar`；若为 `.gz`，先在可信目录解压。
+6. 停止 Worker writer，再停止 Backend；应用目标 Compose/环境配置。
+7. 启动 Backend，验证 schema compatibility、OpenAPI 版本和 health；再启动 Worker 与 Frontend。
+8. 执行目标版本 smoke/drill，确认 Worker accepting、Frontend 200，最后才结束维护窗口。
 
 禁止用删除数据库、清空 acceptance 数据或重建权威库来绕过升级失败。
 
 ## 回滚
 
 1. 先停止 Worker 与 Backend，保存失败版本日志和当前数据副本。
-2. 检查目标旧版本支持的 schema 上限。若当前数据库版本更高，禁止直接启动旧 Backend。
+2. 使用当前 release 的 `assess --operation rollback` 检查明确目标与当前 schema；`blocked` 禁止继续，`restore_backup` 禁止直接启动旧 Backend。
 3. schema 兼容时，可加载上一版本镜像并重建 Backend/Worker/Frontend，随后验证 health、OpenAPI 和 Worker。
 4. schema 不兼容或数据迁移有破坏性时，只能恢复升级前 09C.1 完整备份到隔离目录，验证通过后按维护流程切换；不得原地覆盖生产目录。
 5. 回滚不会撤销升级期间产生的外部 Provider 请求；涉及外部副作用时单独审计。

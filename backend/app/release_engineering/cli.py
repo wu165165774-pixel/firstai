@@ -11,7 +11,7 @@ from app.release_engineering.service import (
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="NovelForge release tooling")
-    subparsers = parser.add_subparsers(dest="operation", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True)
     validate = subparsers.add_parser("validate")
     validate.add_argument("--repo-root", default=".")
     validate.add_argument("--expected-version")
@@ -24,20 +24,35 @@ def _parser() -> argparse.ArgumentParser:
     package.add_argument("--commit")
     verify = subparsers.add_parser("verify")
     verify.add_argument("archive")
+    assess = subparsers.add_parser("assess")
+    assess.add_argument("--repo-root", default=".")
+    assess.add_argument(
+        "--operation",
+        required=True,
+        choices=("upgrade", "rollback"),
+    )
+    assess.add_argument("--other-version", required=True)
+    assess.add_argument("--schema-version", required=True, type=int)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.operation == "verify":
+        if args.command == "verify":
             result = ReleaseEngineeringService.verify(args.archive)
         else:
             service = ReleaseEngineeringService(args.repo_root)
-            if args.operation == "validate":
+            if args.command == "validate":
                 result = service.validate(
                     expected_version=args.expected_version,
                     tag=args.tag,
+                )
+            elif args.command == "assess":
+                result = service.assess_compatibility(
+                    operation=args.operation,
+                    other_version=args.other_version,
+                    schema_version=args.schema_version,
                 )
             else:
                 result = service.package(

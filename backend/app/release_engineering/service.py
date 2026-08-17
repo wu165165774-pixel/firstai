@@ -19,6 +19,16 @@ _BACKEND_VERSION = re.compile(
     re.MULTILINE,
 )
 _ABSOLUTE_WINDOWS = re.compile(r"(?im)^\s*context:\s*[A-Za-z]:[\\/]")
+_LOCKED_REQUIREMENT = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)$"
+)
+_DIRECT_REQUIREMENT = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^]]+\])?"
+)
+_IMAGE_DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+_ACTION_PIN = re.compile(
+    r"^\s*-?\s*uses:\s*([^@\s]+)@([0-9a-f]{40})(?:\s+#.*)?$"
+)
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
@@ -54,6 +64,322 @@ class ReleaseEngineeringService:
                 f"Release metadata must be an object: {relative}"
             )
         return value
+
+    @staticmethod
+    def _canonical_package_name(value: str) -> str:
+        return re.sub(r"[-_.]+", "-", value).lower()
+
+    def dependency_contract(self) -> dict[str, Any]:
+        lock_path = self.repo_root / "backend/requirements.lock"
+        try:
+            lock_bytes = lock_path.read_bytes()
+            lock_text = lock_bytes.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ReleaseValidationError(
+                "Backend dependency lock is missing or invalid."
+            ) from exc
+
+        locked: dict[str, str] = {}
+        lock_order: list[str] = []
+        for raw in lock_text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = _LOCKED_REQUIREMENT.fullmatch(line)
+            if match is None:
+                raise ReleaseValidationError(
+                    "Backend dependency lock must use exact name==version pins."
+                )
+            name = self._canonical_package_name(match.group(1))
+            if name in locked:
+                raise ReleaseValidationError(
+                    "Backend dependency lock contains duplicate packages."
+                )
+            locked[name] = match.group(2)
+            lock_order.append(name)
+        if not locked or lock_order != sorted(lock_order):
+            raise ReleaseValidationError(
+                "Backend dependency lock must be non-empty and sorted."
+            )
+
+        try:
+            metadata = tomllib.loads(
+                (self.repo_root / "backend/pyproject.toml").read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise ReleaseValidationError(
+                "Backend package metadata is invalid."
+            ) from exc
+        direct_names: list[str] = []
+        for requirement in metadata.get("project", {}).get("dependencies", []):
+            declaration = str(requirement).strip()
+            match = _DIRECT_REQUIREMENT.match(declaration)
+            if match is None:
+                raise ReleaseValidationError(
+                    "Backend direct dependency declaration is invalid."
+                )
+            name = self._canonical_package_name(match.group(1))
+            direct_names.append(name)
+            exact = re.search(r"==\s*([A-Za-z0-9][A-Za-z0-9.!+_-]*)", declaration)
+            if exact is not None and locked.get(name) != exact.group(1):
+                raise ReleaseValidationError(
+                    "Backend dependency lock violates an exact direct pin."
+                )
+        missing = sorted(set(direct_names) - set(locked))
+        if missing:
+            raise ReleaseValidationError(
+                "Backend dependency lock is missing direct packages: "
+                + ", ".join(missing)
+            )
+
+        try:
+            requirements_alias = (
+                self.repo_root / "backend/requirements.txt"
+            ).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ReleaseValidationError(
+                "Backend requirements compatibility entry point is missing."
+            ) from exc
+        alias_lines = [
+            item.strip()
+            for item in requirements_alias.splitlines()
+            if item.strip() and not item.lstrip().startswith("#")
+        ]
+        if alias_lines != ["-r requirements.lock"]:
+            raise ReleaseValidationError(
+                "Backend requirements.txt must delegate only to requirements.lock."
+            )
+
+        frontend_lock_path = self.repo_root / "frontend/package-lock.json"
+        frontend_lock = self._read_json("frontend/package-lock.json")
+        if frontend_lock.get("lockfileVersion") != 3:
+            raise ReleaseValidationError(
+                "Frontend package lock format must be version 3."
+            )
+        frontend_packages = frontend_lock.get("packages")
+        if not isinstance(frontend_packages, dict):
+            raise ReleaseValidationError("Frontend package lock is invalid.")
+        registry_packages = 0
+        for name, value in frontend_packages.items():
+            if not name:
+                continue
+            if not isinstance(value, dict):
+                raise ReleaseValidationError("Frontend package lock is invalid.")
+            if value.get("link"):
+                continue
+            registry_packages += 1
+            if not all(value.get(key) for key in ("version", "resolved", "integrity")):
+                raise ReleaseValidationError(
+                    "Frontend package lock contains an unpinned package."
+                )
+
+        image_refs = self._pinned_image_refs()
+        action_count = self._pinned_action_count()
+        return {
+            "backend_lock_sha256": _sha256(lock_bytes),
+            "backend_locked_packages": len(locked),
+            "backend_direct_packages": len(set(direct_names)),
+            "frontend_lock_sha256": _sha256(frontend_lock_path.read_bytes()),
+            "frontend_locked_packages": registry_packages,
+            "pinned_images": image_refs,
+            "pinned_github_actions": action_count,
+        }
+
+    def _pinned_image_refs(self) -> dict[str, str]:
+        refs: dict[str, str] = {}
+        for relative in ("backend/Dockerfile", "frontend/Dockerfile"):
+            try:
+                text = (self.repo_root / relative).read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ReleaseValidationError(
+                    f"Release Dockerfile is missing: {relative}"
+                ) from exc
+            for index, line in enumerate(text.splitlines(), start=1):
+                stripped = line.strip()
+                if not stripped.upper().startswith("FROM "):
+                    continue
+                ref = stripped.split()[1]
+                if _IMAGE_DIGEST.fullmatch(ref) is None:
+                    raise ReleaseValidationError(
+                        f"Container base image is not digest-pinned: {relative}:{index}"
+                    )
+                refs[f"{relative}:{index}"] = ref
+        try:
+            compose = (self.repo_root / "docker-compose.yml").read_text(
+                encoding="utf-8"
+            )
+        except OSError as exc:
+            raise ReleaseValidationError("Compose configuration is missing.") from exc
+        ollama = re.search(r"(?m)^\s*image:\s*(ollama/ollama\S*)\s*$", compose)
+        if ollama is None or _IMAGE_DIGEST.fullmatch(ollama.group(1)) is None:
+            raise ReleaseValidationError(
+                "Ollama image must be pinned by SHA-256 digest."
+            )
+        refs["docker-compose.yml:ollama"] = ollama.group(1)
+
+        backend = (self.repo_root / "backend/Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        if (
+            "COPY requirements.lock ./" not in backend
+            or "-r requirements.lock" not in backend
+            or "python -m pip check" not in backend
+            or "pip install --upgrade" in backend
+            or "pip install --no-cache-dir ." in backend
+        ):
+            raise ReleaseValidationError(
+                "Backend Dockerfile must install and check only the dependency lock."
+            )
+        return refs
+
+    def _pinned_action_count(self) -> int:
+        workflows = self.repo_root / ".github/workflows"
+        try:
+            paths = sorted(workflows.glob("*.yml")) + sorted(
+                workflows.glob("*.yaml")
+            )
+        except OSError as exc:
+            raise ReleaseValidationError("GitHub workflows are unavailable.") from exc
+        count = 0
+        for path in paths:
+            for index, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if "uses:" not in line:
+                    continue
+                match = _ACTION_PIN.fullmatch(line)
+                if match is None:
+                    raise ReleaseValidationError(
+                        "GitHub Action is not commit-pinned: "
+                        f"{path.name}:{index}"
+                    )
+                count += 1
+        if count == 0:
+            raise ReleaseValidationError("No pinned GitHub Actions were found.")
+        return count
+
+    def compatibility_matrix(self, version: str | None = None) -> dict[str, Any]:
+        value = self._read_json("release-compatibility.json")
+        if (
+            value.get("format") != "novelforge-release-compatibility"
+            or value.get("format_version") != 1
+        ):
+            raise ReleaseValidationError(
+                "Release compatibility matrix format is unsupported."
+            )
+        release_version = str(value.get("release_version") or "")
+        if version is not None and release_version != version:
+            raise ReleaseValidationError(
+                "Release compatibility matrix version does not match."
+            )
+        schema = value.get("schema")
+        if not isinstance(schema, dict):
+            raise ReleaseValidationError(
+                "Release compatibility schema policy is invalid."
+            )
+        minimum = schema.get("minimum_runtime_version")
+        current = schema.get("current_version")
+        maximum = schema.get("maximum_runtime_version")
+        from app.schema_version import CURRENT_SCHEMA_VERSION
+
+        if (
+            not all(type(item) is int for item in (minimum, current, maximum))
+            or not minimum <= current <= maximum
+            or current != CURRENT_SCHEMA_VERSION
+        ):
+            raise ReleaseValidationError(
+                "Release compatibility schema versions are invalid."
+            )
+        upgrade = value.get("upgrade")
+        rollback = value.get("rollback")
+        if not isinstance(upgrade, list) or not isinstance(rollback, list):
+            raise ReleaseValidationError(
+                "Release compatibility paths are invalid."
+            )
+        if len({item.get("from_version") for item in upgrade if isinstance(item, dict)}) != len(upgrade):
+            raise ReleaseValidationError("Upgrade paths must be unique.")
+        if len({item.get("to_version") for item in rollback if isinstance(item, dict)}) != len(rollback):
+            raise ReleaseValidationError("Rollback paths must be unique.")
+        for item in upgrade:
+            if (
+                not isinstance(item, dict)
+                or not _VERSION.fullmatch(str(item.get("from_version") or ""))
+                or type(item.get("from_schema_version")) is not int
+                or not minimum <= item.get("from_schema_version") <= maximum
+                or item.get("decision") not in {"direct", "migrate"}
+                or item.get("backup_required") is not True
+            ):
+                raise ReleaseValidationError("Upgrade path is invalid.")
+        for item in rollback:
+            if (
+                not isinstance(item, dict)
+                or not _VERSION.fullmatch(str(item.get("to_version") or ""))
+                or type(item.get("maximum_schema_version")) is not int
+                or not minimum <= item.get("maximum_schema_version") <= current
+                or item.get("compatible_decision") != "direct"
+                or item.get("newer_schema_decision") != "restore_backup"
+                or item.get("backup_required") is not True
+            ):
+                raise ReleaseValidationError("Rollback path is invalid.")
+        if value.get("unknown_path_decision") != "blocked":
+            raise ReleaseValidationError(
+                "Unknown release paths must fail closed."
+            )
+        return value
+
+    def assess_compatibility(
+        self,
+        *,
+        operation: str,
+        other_version: str,
+        schema_version: int,
+    ) -> dict[str, Any]:
+        matrix = self.compatibility_matrix(self.versions()["backend"])
+        if operation == "upgrade":
+            item = next(
+                (
+                    candidate
+                    for candidate in matrix["upgrade"]
+                    if candidate["from_version"] == other_version
+                ),
+                None,
+            )
+            decision = (
+                item["decision"]
+                if item is not None
+                and item["from_schema_version"] == schema_version
+                else matrix["unknown_path_decision"]
+            )
+        elif operation == "rollback":
+            item = next(
+                (
+                    candidate
+                    for candidate in matrix["rollback"]
+                    if candidate["to_version"] == other_version
+                ),
+                None,
+            )
+            if item is None:
+                decision = matrix["unknown_path_decision"]
+            elif schema_version <= item["maximum_schema_version"]:
+                decision = item["compatible_decision"]
+            else:
+                decision = item["newer_schema_decision"]
+        else:
+            raise ReleaseValidationError(
+                "Compatibility operation must be upgrade or rollback."
+            )
+        return {
+            "result": "ok",
+            "operation": operation,
+            "release_version": matrix["release_version"],
+            "other_version": other_version,
+            "schema_version": schema_version,
+            "decision": decision,
+            "backup_required": decision != "blocked",
+        }
 
     def versions(self) -> dict[str, str]:
         version_path = self.repo_root / "backend/app/version.py"
@@ -156,6 +482,8 @@ class ReleaseEngineeringService:
             raise ReleaseValidationError(
                 "Release acceptance is not PASS: " + ", ".join(failed)
             )
+        dependencies = self.dependency_contract()
+        compatibility = self.compatibility_matrix(version)
         return {
             "result": "ok",
             "version": version,
@@ -163,6 +491,15 @@ class ReleaseEngineeringService:
             "versions": versions,
             "acceptance": records,
             "compose_portable": True,
+            "dependencies": dependencies,
+            "compatibility": {
+                "schema": compatibility["schema"],
+                "upgrade_paths": len(compatibility["upgrade"]),
+                "rollback_paths": len(compatibility["rollback"]),
+                "unknown_path_decision": compatibility[
+                    "unknown_path_decision"
+                ],
+            },
         }
 
     @staticmethod
@@ -176,6 +513,8 @@ class ReleaseEngineeringService:
             "backend/Dockerfile",
             "backend/.dockerignore",
             "backend/pyproject.toml",
+            "backend/requirements.lock",
+            "backend/requirements.txt",
             "frontend/Dockerfile",
             "frontend/.dockerignore",
             "frontend/index.html",
@@ -187,6 +526,8 @@ class ReleaseEngineeringService:
             "docs/CURRENT_IMPLEMENTATION.md",
             "docs/ROADMAP.md",
             "plugins/.gitkeep",
+            "release-compatibility.json",
+            ".github/dependabot.yml",
         }:
             return True
         prefixes = (

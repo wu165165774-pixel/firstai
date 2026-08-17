@@ -3,6 +3,12 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v1.0.0-rc.2
+
+- Locked the accepted Backend Linux/Python runtime to 34 exact distributions and made Docker/CI install from the lock with `pip check` instead of resolving broad project ranges.
+- Pinned Python, Node, Nginx, Ollama, and every GitHub Action to immutable SHA-256 or commit references; added automated lock, integrity, and mutable-reference release gates.
+- Added a machine-readable schema-aware upgrade/rollback matrix, fail-closed compatibility assessment CLI, isolated RC1 rollback probe, and dependency update runbook.
+
 ## v1.0.0-rc.1
 
 - Changed Backend, Frontend, and Ollama host-port defaults to loopback-only bindings and disabled Backend debug mode by default.

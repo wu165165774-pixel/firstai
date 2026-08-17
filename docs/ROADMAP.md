@@ -32,13 +32,13 @@ NovelForge 的目标是在 Windows + Docker 环境中构建一个可以持续、
 当前已发布基线：
 
 ```text
-v0.16.0-alpha.2 — Sprint 10B 受控插件运行时
+v1.0.0-rc.1 — Sprint 10C 1.0 RC 本地部署硬化
 ```
 
 当前已验收、待发布目标：
 
 ```text
-v1.0.0-rc.1 — Sprint 10C 1.0 RC 本地部署硬化
+v1.0.0-rc.2 — Sprint 10D RC 依赖锁定与升级/回滚矩阵
 ```
 
 已完成的主干能力：
@@ -63,11 +63,11 @@ v1.0.0-rc.1 — Sprint 10C 1.0 RC 本地部署硬化
 - Chapter Workflow 已形成约束注入、Review 候选事实、确定性冲突、Rewrite 修复和 Re-review 复检闭环；候选事实保持不写回。
 - Approved Workflow 候选事实随 Manuscript revision 冻结，只有显式接受才在同一事务写入 outbox；Memory、FAISS 与 Temporal Graph 通过稳定 ID、逐 sink checkpoint、retry、启动恢复和旧 revision 撤回实现可审计的最终一致回写。
 
-下一开发项：
+下一验收项：
 
 ```text
-Sprint 10D - RC 依赖锁定与升级/回滚矩阵
-状态：待开始
+v1.0 完整产品旅程与 Go/No-Go
+状态：待执行
 ```
 
 ## 3. 交付路线
@@ -99,6 +99,7 @@ Sprint 10D - RC 依赖锁定与升级/回滚矩阵
 | 10A | 插件契约与只读目录 | 已完成 | manifest、兼容策略、权限声明、精确启停和管理员 Catalog 可验收，且不执行第三方代码 |
 | 10B | 受控插件运行时 | 已完成 | Manifest v2 entry point 完整性、显式权限授权、能力级上下文、生命周期、故障隔离和事务回滚可验收 |
 | 10C | 1.0 RC 本地部署硬化 | 已完成 | loopback 默认绑定、Debug 默认关闭、非本机暴露门禁、安全响应头和统一版本身份可验收 |
+| 10D | RC 依赖锁定与升级/回滚矩阵 | 已完成 | Python/Node/镜像/Action 不可变输入、机器可判定兼容矩阵、备份门与隔离旧版本启动探针可验收 |
 | 1.0 | 插件化与正式发布 | 进行中 | 插件边界、兼容策略、安装/禁用、升级和完整产品验收完成 |
 
 ## 4. 近期关键路径

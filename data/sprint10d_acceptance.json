@@ -1,0 +1,109 @@
+{
+  "sprint": "10D",
+  "version": "1.0.0-rc.2",
+  "recorded_at": "2026-08-17T16:03:51+08:00",
+  "tests": {
+    "release_engineering": {
+      "ran": 12,
+      "passed": 12,
+      "duration_seconds": 0.062
+    },
+    "dependency_runtime_lock": {
+      "ran": 3,
+      "passed": 3,
+      "duration_seconds": 0.002
+    },
+    "schema_migrations": {
+      "ran": 10,
+      "passed": 10,
+      "duration_seconds": 10.287
+    },
+    "backend_full": {
+      "ran": 532,
+      "passed": 532,
+      "duration_seconds": 128.364
+    },
+    "frontend": {
+      "ran": 21,
+      "passed": 21,
+      "duration_seconds": 0.0489453
+    },
+    "python_compileall": true,
+    "powershell_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "git_diff_check": true,
+    "production_images_built": true
+  },
+  "dependency_contract": {
+    "backend_locked_packages": 34,
+    "backend_direct_packages": 11,
+    "backend_lock_sha256": "63e31675b37e1ab82accadb7a1a5ebfdc7b4cacfc33719c59be09a68ac02caae",
+    "backend_runtime_matches_lock": true,
+    "worker_runtime_matches_lock": true,
+    "frontend_locked_packages": 80,
+    "frontend_lock_sha256": "ef5a1f3094cff4e18d20683f98e4bc523d1929a80117b751c4106646e2ef154c",
+    "frontend_lock_integrity_verified": true,
+    "digest_pinned_images": 4,
+    "commit_pinned_github_actions": 9
+  },
+  "compatibility": {
+    "schema_version": 1,
+    "upgrade_rc1_to_rc2": "direct",
+    "rollback_rc2_to_rc1": "direct",
+    "newer_schema_rollback": "restore_backup",
+    "unknown_path": "blocked",
+    "rollback_probe_version": "1.0.0-rc.1",
+    "rollback_probe_status": 200,
+    "isolated_restore_verified": true
+  },
+  "backup": {
+    "backup_id": "sprint10d-20260817T160013",
+    "consistency_mode": "offline_required",
+    "checked_files": 9,
+    "isolated_restored_files": 9,
+    "rebuild_required": []
+  },
+  "production_images": {
+    "backend": {
+      "built": true,
+      "image_sha256": "43ee7fb5b929c122660f1620ca53981338c3e11a7c2f3c64ad3ba5cc7ce153fa"
+    },
+    "frontend": {
+      "built": true,
+      "image_sha256": "0b62f0ccd32be029ee473a54653fce402891d8b3642189cb0b7e91ff84f462bc"
+    },
+    "worker": {
+      "built": true,
+      "image_sha256": "f801cc6cef9a341ab75abe01c8ffe5fd45bd56f2ee9fdac3fe3119cec03f2b29"
+    }
+  },
+  "live_drill": {
+    "result": "OK",
+    "openapi_version": "1.0.0-rc.2",
+    "backend_status": 200,
+    "frontend_status": 200,
+    "worker_running": true,
+    "rollback_status": 200,
+    "runtime_locks_verified": true,
+    "cleanup_verified": true,
+    "rollback_probe_removed": true
+  },
+  "automation": {
+    "hosted_ci_executed": false,
+    "hosted_release_executed": false,
+    "local_equivalent_gates_passed": true
+  },
+  "release_artifact": {
+    "local_drill_passed": true,
+    "file_count": 263,
+    "sha256": "4e4d63403422db3f7f4cec1cbe724d65f14235faedbb4604c5af22ebac0553df",
+    "independent_verify_passed": true,
+    "repeat_archive_bytes_identical": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "production_data_modified": false,
+  "result": "PASS"
+}

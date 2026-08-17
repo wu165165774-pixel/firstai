@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v1.0.0-rc.1
+* 当前代码版本：v1.0.0-rc.2
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10C 已完成；下一项为 Sprint 10D RC 依赖锁定与升级/回滚矩阵
+* 当前阶段：Sprint 10D 已完成，下一项为完整产品旅程与 v1.0 Go/No-Go
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v1.0.0-rc.1
+* 当前代码版本：v1.0.0-rc.2
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10C 已完成；下一项为 Sprint 10D RC 依赖锁定与升级/回滚矩阵
+* 当前阶段：Sprint 10D 已完成，下一项为完整产品旅程与 v1.0 Go/No-Go
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3070,3 +3070,15 @@ Nginx 关闭版本暴露，并为 SPA、静态资源、healthz 与代理 API 增
 Deployment Security 专项 `6/6`、Release Engineering `9/9`、Plugin Catalog `9/9`、Plugin Runtime `12/12`、Authentication `7/7`、Frontend `21/21` 与 Backend 全量 `526/526` 均通过；Python compileall、两套 Compose config 和 `git diff --check` 通过，三镜像生产构建完成。
 
 真实 RC 安全演练确认 Backend、Frontend 与 Ollama 分别只绑定 `127.0.0.1:18080`、`127.0.0.1:18081` 与 `127.0.0.1:11434`；不安全的非 loopback 暴露 fail closed，鉴权启用且 Debug 关闭的配置可准入。运行态 Debug、风险 override 和插件执行均关闭，安全响应头存在，Backend/Frontend/Ollama HTTP 200，Worker 正常运行。三镜像分别为 `dcd952e4...a0ee`、`0b62f0cc...62bc`、`b006f3e3...41c9`。完整边界见 `docs/operations/DEPLOYMENT_SECURITY.md`，验收记录保存在 `data/sprint10c_acceptance.json`；Sprint 10C 已完成，下一项为 Sprint 10D RC 依赖锁定与升级/回滚矩阵。
+
+## v1.0.0-rc.2 — Sprint 10D RC 依赖锁定与升级/回滚矩阵
+
+Backend 的声明性依赖范围继续保存在 `pyproject.toml`，生产解析则固定为 `requirements.lock` 中从已验收 RC1 镜像采集的 34 个 Linux/Python 3.12 分发包。Backend 与 Worker 镜像、CI 和 Release workflow 都只从 lock 安装并执行 `pip check`，不再升级 pip 或重新解析宽范围项目依赖；旧 `requirements.txt` 只保留为指向 lock 的兼容入口。Frontend 继续由 lockfile v3、80 个带 resolved/integrity 的包和 `npm ci` 管理。
+
+Python、Node、Nginx 与 Ollama 镜像均固定到 SHA-256 digest，9 个 GitHub Action 使用完整 40 位 commit。Release Engineering 会验证精确且排序的 Backend lock、Frontend integrity、Dockerfile/Compose digest、Action commit、lock 安装命令和源码制品收录，任何范围依赖、缺失直接依赖、可变 image tag 或 Action tag 都 fail closed。Dependabot 只提出候选更新，不能绕过专项、全量和 live 门禁。
+
+`release-compatibility.json` 将 schema v1、允许的 RC1/Alpha2 升级来源、RC1 回滚上限与未知路径阻断变成机器可读契约。`release_engineering.cli assess` 对已声明同 schema 路径返回 `direct`，对未知路径返回 `blocked`，对高于旧版本上限的 schema 返回 `restore_backup`；所有已知升级/回滚仍要求先完成离线备份。生产演练脚本会把备份恢复到隔离目录，再用保留的 RC1 镜像验证旧 Backend 能打开 schema v1，不让旧版本接触生产数据目录。
+
+真实 lock contract 已确认 Backend 34 包、Frontend 80 包、4 个 digest-pinned image 和 9 个 commit-pinned Action。Release Engineering `12/12`、Dependency Runtime Lock `3/3`、Schema Migration `10/10`、Frontend `21/21` 与 Backend 全量 `532/532` 均通过；Python compileall、两套 Compose config、`git diff --check`、三镜像构建和 Backend/Worker 镜像内 lock 精确对照均通过。
+
+离线备份 `sprint10d-20260817T160013` 与 9 文件隔离恢复通过。RC1 Backend 只挂载隔离恢复目录，在 schema v1 上启动并返回 HTTP 200；RC2 Backend/Frontend 均返回 HTTP 200，Worker 正常运行，清理复验确认回滚探针已删除。三镜像分别为 `43ee7fb5...53fa`、`0b62f0cc...62bc`、`f801cc6c...2b29`。完整边界见 `docs/operations/DEPENDENCY_LOCKS.md`、`docs/sprints/Sprint10D.md` 与 `data/sprint10d_acceptance.json`；Sprint 10D 已完成，下一项为完整产品旅程、RC 缺陷清零和正式 `v1.0.0` Go/No-Go。

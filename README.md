@@ -18,6 +18,7 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - CI 与 tag 发布工程：自动回归、三镜像构建、确定性源码制品、checksum 及升级/回滚 runbook。
 - 默认关闭的本地可信插件运行时：Manifest v2 完整性、Plugin API/Core SemVer 兼容、显式权限授权、事务式扩展注册、生命周期回滚和管理员 Catalog。
 - RC 默认部署安全：宿主端口仅绑定 `127.0.0.1`、Debug 默认关闭、非本机暴露 fail closed，并由 Nginx 返回基础浏览器安全响应头。
+- RC 依赖与回滚门禁：Backend/Frontend 完整 lock、容器与 GitHub Action 不可变引用、schema-aware 升级/回滚矩阵和隔离回滚探针。
 
 ## 启动
 
@@ -97,6 +98,7 @@ npm run dev
 - [产品与工程 Roadmap](docs/ROADMAP.md)
 - [Sprint 08E.1](docs/sprints/Sprint08E1.md)
 - [发布、升级与回滚](docs/operations/RELEASE.md)
+- [依赖锁定与更新](docs/operations/DEPENDENCY_LOCKS.md)
 - [插件契约与安全边界](docs/operations/PLUGINS.md)
 - [Sprint 08E.2](docs/sprints/Sprint08E2.md)
 - [Sprint 09A](docs/sprints/Sprint09A.md)
