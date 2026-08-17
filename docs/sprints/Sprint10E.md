@@ -63,8 +63,8 @@ Newer-schema rollback: restore_backup
 Readiness requirements: 9 acceptance capabilities / 11 journey checks
 PowerShell drill syntax passed
 Frontend regression: 21/21 passed
-Backend focused regression: Release Engineering 14/14, Dependency Lock 3/3, Schema Migration 10/10, Plugin Catalog 9/9, Plugin Runtime 12/12
-Backend full regression: 534/534 passed in 134.334s
+Backend focused regression: Release Engineering 15/15, Dependency Lock 3/3, Schema Migration 10/10, Plugin Catalog 9/9, Plugin Runtime 12/12
+Backend full regression: 535/535 passed in 130.724s
 Production image locks: Backend 34 packages / Frontend 80 packages
 Real product journey: 15/15 passed
 Local decision: go

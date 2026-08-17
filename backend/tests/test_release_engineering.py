@@ -261,6 +261,19 @@ class ReleaseEngineeringTests(ReleaseFixture, unittest.TestCase):
         with self.assertRaisesRegex(ReleaseValidationError, "commit-pinned"):
             self.service.validate()
 
+    def test_runner_context_in_job_environment_fails_closed(self) -> None:
+        self._write(
+            ".github/workflows/ci.yml",
+            "jobs:\n"
+            "  backend:\n"
+            "    env:\n"
+            "      DB_PATH: ${{ runner.temp }}/novels.db\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@" + "e" * 40 + " # v4.2.2\n",
+        )
+        with self.assertRaisesRegex(ReleaseValidationError, "runner.temp"):
+            self.service.validate()
+
     def test_upgrade_and_rollback_matrix_is_fail_closed(self) -> None:
         upgraded = self.service.assess_compatibility(
             operation="upgrade",

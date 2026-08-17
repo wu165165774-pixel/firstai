@@ -23,12 +23,12 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: novel-ai
       PYTHONPATH: backend
-      NOVELFORGE_NOVEL_DB_PATH: ${{ runner.temp }}/novels.db
-      NOVELFORGE_WORKFLOW_DB_PATH: ${{ runner.temp }}/workflow_runs.db
-      MEMORY_DB_PATH: ${{ runner.temp }}/memory.db
-      EXTERNAL_KNOWLEDGE_DB_PATH: ${{ runner.temp }}/external_knowledge.db
-      NOVELFORGE_TEMPORAL_GRAPH_DB_PATH: ${{ runner.temp }}/temporal_graph.db
-      FAISS_INDEX_DIR: ${{ runner.temp }}/vector_db
+      NOVELFORGE_NOVEL_DB_PATH: /tmp/novelforge-release-novels.db
+      NOVELFORGE_WORKFLOW_DB_PATH: /tmp/novelforge-release-workflow-runs.db
+      MEMORY_DB_PATH: /tmp/novelforge-release-memory.db
+      EXTERNAL_KNOWLEDGE_DB_PATH: /tmp/novelforge-release-external-knowledge.db
+      NOVELFORGE_TEMPORAL_GRAPH_DB_PATH: /tmp/novelforge-release-temporal-graph.db
+      FAISS_INDEX_DIR: /tmp/novelforge-release-vector-db
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

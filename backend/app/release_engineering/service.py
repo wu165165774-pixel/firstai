@@ -244,9 +244,14 @@ class ReleaseEngineeringService:
             raise ReleaseValidationError("GitHub workflows are unavailable.") from exc
         count = 0
         for path in paths:
-            for index, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), start=1
-            ):
+            workflow_text = path.read_text(encoding="utf-8")
+            if "${{ runner.temp }}" in workflow_text:
+                raise ReleaseValidationError(
+                    "GitHub workflow runner.temp context is not allowed; "
+                    "use runner-local paths that are valid in job-level env: "
+                    f"{path.name}"
+                )
+            for index, line in enumerate(workflow_text.splitlines(), start=1):
                 if "uses:" not in line:
                     continue
                 match = _ACTION_PIN.fullmatch(line)

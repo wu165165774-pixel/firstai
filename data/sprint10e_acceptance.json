@@ -4,8 +4,8 @@
   "recorded_at": "2026-08-17T17:50:23+08:00",
   "tests": {
     "release_engineering": {
-      "ran": 14,
-      "passed": 14
+      "ran": 15,
+      "passed": 15
     },
     "dependency_runtime_lock": {
       "ran": 3,
@@ -24,9 +24,9 @@
       "passed": 12
     },
     "backend_full": {
-      "ran": 534,
-      "passed": 534,
-      "duration_seconds": 134.334
+      "ran": 535,
+      "passed": 535,
+      "duration_seconds": 130.724
     },
     "frontend": {
       "ran": 21,
@@ -148,7 +148,7 @@
   "release_artifact": {
     "local_drill_passed": true,
     "file_count": 266,
-    "sha256": "cbfcb3c3024aa3dabd1a24d55f7dca6f26fe5b1057f7c1814abac80eb4dc0ec9",
+    "sha256": "addbcd10777109ca1c3d7347319f418826c20c9ad20384a333e72638969b8196",
     "independent_verify_passed": true,
     "repeat_archive_bytes_identical": true,
     "raw_acceptance_included": false,
