@@ -68,12 +68,12 @@ Backend full regression: 535/535 passed in 130.724s
 Production image locks: Backend 34 packages / Frontend 80 packages
 Real product journey: 15/15 passed
 Local decision: go
-Distribution decision: pending_hosted_release
+Distribution decision: go
 ```
 
 本地正式旅程使用独立用户 `v1-release-journey-20260817T174054` 和小说 `3ae59779-ef4e-47d5-ad9a-3232bd98acbf`。三次 Planner generation 共使用 9168 tokens，均保持 candidate-only 并经显式接受；首次 Workflow 因 `review_parse_failed` 保留为可恢复审计记录，第二次完成完整质量门。Manuscript revision 1 经显式接受后完成 2/2 事实投影；10 文件导出两次字节一致，manifest SHA-256 为 `f98d40b92f7b98868f3fa905543ba83ee92e83490042ac8544eae423c72f3e19`，Backend 重启后仍可读取且跨用户访问被隔离。
 
-本轮构建的 Backend、Frontend、Worker 镜像分别为 `sha256:fcd06025639d2619266e96b331c61985ffe53940a2f6b58a74f6d664a74aeecc`、`sha256:0b62f0ccd32be029ee473a54653fce402891d8b3642189cb0b7e91ff84f462bc`、`sha256:5348bf1f56f05a3ba33304b29e947e0596cdbd922d707aff03714c350bd1179b`。本地 Go/No-Go 已返回 `local_decision=go`；因为 Hosted CI 与 GitHub Release 尚未执行，分发决策仍为 `pending_hosted_release`。
+本轮构建的 Backend、Frontend、Worker 镜像分别为 `sha256:fcd06025639d2619266e96b331c61985ffe53940a2f6b58a74f6d664a74aeecc`、`sha256:0b62f0ccd32be029ee473a54653fce402891d8b3642189cb0b7e91ff84f462bc`、`sha256:5348bf1f56f05a3ba33304b29e947e0596cdbd922d707aff03714c350bd1179b`。Hosted CI run `32040818117` 与 Hosted Release run `32043329937` 均成功；正式 tag 解引用提交保持 `f8e49e483d8015d8296dc9358c43ee4588da2516`，GitHub Release 非 draft、非 prerelease，三个交付资产齐全，因此最终 `distribution_decision=go`。
 
 ## 非目标
 

@@ -2,7 +2,7 @@
 
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
-- Fixed Hosted Release checksum verification to append and verify every `SHA256SUMS` member from the `dist` directory, preserving the immutable `v1.0.0` tag while enabling a manual rerun for that existing tag.
+- Fixed Hosted Release checksum verification to append and verify every `SHA256SUMS` member from the `dist` directory; the immutable `v1.0.0` tag then completed its manual Hosted Release rerun with all three assets published.
 
 ## v1.0.0
 

@@ -137,13 +137,35 @@
     }
   },
   "automation": {
-    "hosted_ci_executed": false,
-    "hosted_release_executed": false,
-    "local_equivalent_gates_passed": true
+    "hosted_ci_executed": true,
+    "hosted_release_executed": true,
+    "local_equivalent_gates_passed": true,
+    "hosted_ci_run_id": 32040818117,
+    "hosted_ci_commit": "f8e49e483d8015d8296dc9358c43ee4588da2516",
+    "hosted_release_run_id": 32043329937,
+    "hosted_release_workflow_commit": "37c5d913794481a69bff1d421bf24c842a881ebe",
+    "hosted_release_tag_commit": "f8e49e483d8015d8296dc9358c43ee4588da2516",
+    "hosted_release_published_at": "2026-08-17T15:48:32Z",
+    "hosted_release_url": "https://github.com/wu165165774-pixel/firstai/releases/tag/v1.0.0",
+    "hosted_source_sha256": "3ba9f05504e4f4ef0939d3bcf64634a9e2050d949647674a6a7b62e1ac2dc575",
+    "hosted_assets": [
+      {
+        "name": "novelforge-v1.0.0-images.tar.gz",
+        "bytes": 120356349
+      },
+      {
+        "name": "novelforge-v1.0.0-source.zip",
+        "bytes": 539815
+      },
+      {
+        "name": "SHA256SUMS",
+        "bytes": 193
+      }
+    ]
   },
   "release_decision": {
     "local": "go",
-    "distribution": "pending_hosted_release"
+    "distribution": "go"
   },
   "release_artifact": {
     "local_drill_passed": true,
