@@ -46,7 +46,7 @@ python -m app.release_engineering.cli go-no-go `
 
 正式稳定版源码 package 会再次执行 Go/No-Go，并把无密钥、无业务正文的 readiness 摘要写入 release manifest。缺少必需 Sprint、当前版本产品旅程、任一 required check 或 automation 结构时均拒绝打包。
 
-当前 `v1.0.0` 本地 15/15 演练与九项历史 PASS 聚合已返回 `local_decision=go`。首次 Hosted CI 在创建 job 前发现 job-level `runner.temp` context 无效；修复后 Backend 与 Containers job 成功，Frontend job 又发现 Node 22 的测试隔离参数仍需使用 `--experimental-test-isolation` 名称，该兼容修复当前等待重跑。GitHub Release 尚未成功，分发状态明确保持 `distribution_decision=pending_hosted_release`。
+当前 `v1.0.0` 本地 15/15 演练与九项历史 PASS 聚合已返回 `local_decision=go`，Hosted CI 已在 tag 指向的提交上成功。首次 tag Release 已完成完整测试、生产镜像与源码包生成，但 `SHA256SUMS` 从错误的工作目录校验而失败；master workflow 已统一从 `dist` 目录追加、排序和校验成员。远端 tag 不移动、不强推，使用 master 上的 `workflow_dispatch` 对既有 `v1.0.0` 重跑。GitHub Release 尚未成功前，分发状态保持 `distribution_decision=pending_hosted_release`。
 
 ## 制品
 

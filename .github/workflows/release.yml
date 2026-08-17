@@ -78,9 +78,12 @@ jobs:
           mkdir -p dist
           python -m app.release_engineering.cli package --repo-root . --output-dir dist --expected-version "$RELEASE_VERSION" --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
           docker save novel-ai-backend novel-ai-frontend novel-ai-worker | gzip -9 > "dist/novelforge-v${RELEASE_VERSION}-images.tar.gz"
-          sha256sum "dist/novelforge-v${RELEASE_VERSION}-images.tar.gz" >> dist/SHA256SUMS
-          sort -k2 -o dist/SHA256SUMS dist/SHA256SUMS
-          sha256sum -c dist/SHA256SUMS
+          (
+            cd dist
+            sha256sum "novelforge-v${RELEASE_VERSION}-images.tar.gz" >> SHA256SUMS
+            sort -k2 -o SHA256SUMS SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: novelforge-${{ env.RELEASE_TAG }}
