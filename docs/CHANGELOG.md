@@ -3,6 +3,13 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.15.0-alpha.38
+
+- Added PR/push CI for full Backend regression, Frontend test/build verification, portable Compose validation, and all production image builds.
+- Added tag-gated release automation that produces a deterministic verified source archive, a three-image archive, `SHA256SUMS`, Actions artifacts, and a GitHub Release.
+- Added fail-closed Backend/Frontend/lock/tag/acceptance version validation, artifact member manifests, independent verification, and tamper rejection.
+- Replaced the host-specific Backend Compose context with `./backend` and documented backup-gated upgrades, schema-aware rollback, and local release rehearsal.
+
 ## v0.15.0-alpha.37
 
 - Added deterministic, in-memory novel ZIP exports containing current Project, Story Bible, entity registry, Novel Plan, Story Arcs, Chapter Plans, and accepted Manuscript only.

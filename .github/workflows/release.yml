@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v-prefixed tag to package
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: novel-ai
+      PYTHONPATH: backend
+      NOVELFORGE_NOVEL_DB_PATH: ${{ runner.temp }}/novels.db
+      NOVELFORGE_WORKFLOW_DB_PATH: ${{ runner.temp }}/workflow_runs.db
+      MEMORY_DB_PATH: ${{ runner.temp }}/memory.db
+      EXTERNAL_KNOWLEDGE_DB_PATH: ${{ runner.temp }}/external_knowledge.db
+      NOVELFORGE_TEMPORAL_GRAPH_DB_PATH: ${{ runner.temp }}/temporal_graph.db
+      FAISS_INDEX_DIR: ${{ runner.temp }}/vector_db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Resolve tag and version
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ./backend
+          npm ci --prefix frontend --no-audit --no-fund
+      - name: Test and validate release identity
+        run: |
+          python -m compileall -q backend/app backend/tests
+          python -m unittest discover -s backend/tests -v
+          npm test --prefix frontend
+          npm run build --prefix frontend
+          npm run verify:bundle --prefix frontend
+          python -m app.release_engineering.cli validate --repo-root . --expected-version "$RELEASE_VERSION" --tag "$RELEASE_TAG"
+      - name: Build production images
+        run: |
+          printf '#!/usr/bin/env bash\nexec docker compose "$@"\n' | sudo tee /usr/local/bin/docker-compose >/dev/null
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose config --quiet
+          docker-compose -f docker-compose.yml -f docker-compose.worker.yml config --quiet
+          docker-compose build backend frontend
+          docker-compose -f docker-compose.yml -f docker-compose.worker.yml build worker
+      - name: Build and verify release artifacts
+        run: |
+          mkdir -p dist
+          python -m app.release_engineering.cli package --repo-root . --output-dir dist --expected-version "$RELEASE_VERSION" --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+          docker save novel-ai-backend novel-ai-frontend novel-ai-worker | gzip -9 > "dist/novelforge-v${RELEASE_VERSION}-images.tar.gz"
+          sha256sum "dist/novelforge-v${RELEASE_VERSION}-images.tar.gz" >> dist/SHA256SUMS
+          sort -k2 -o dist/SHA256SUMS dist/SHA256SUMS
+          sha256sum -c dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novelforge-${{ env.RELEASE_TAG }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "NovelForge $RELEASE_TAG"
+          fi

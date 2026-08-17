@@ -14,6 +14,8 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - 可选 Bearer 身份认证：令牌绑定固定用户、资源所有权隐藏和管理员运维门禁。
 - Provider 能力目录：区分注册、配置与实时可用状态，工作台按能力选择 Provider/Model。
 - Prompt Catalog：内部 LLM 调用记录不可伪造的 prompt revision 与最终渲染摘要，Planner/Workflow 在工作台展示所选版本。
+- 小说级确定性 ZIP 导出：仅包含 accepted manuscript、当前规划与逐文件 SHA-256 manifest。
+- CI 与 tag 发布工程：自动回归、三镜像构建、确定性源码制品、checksum 及升级/回滚 runbook。
 
 ## 启动
 
@@ -88,6 +90,7 @@ npm run dev
 - [当前实现](docs/CURRENT_IMPLEMENTATION.md)
 - [产品与工程 Roadmap](docs/ROADMAP.md)
 - [Sprint 08E.1](docs/sprints/Sprint08E1.md)
+- [发布、升级与回滚](docs/operations/RELEASE.md)
 - [Sprint 08E.2](docs/sprints/Sprint08E2.md)
 - [Sprint 09A](docs/sprints/Sprint09A.md)
 - [Sprint 09B.1](docs/sprints/Sprint09B1.md)

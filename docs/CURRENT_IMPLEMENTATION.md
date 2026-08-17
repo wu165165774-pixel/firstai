@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.37
+* 当前代码版本：v0.15.0-alpha.38
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 09C 已完成；下一项为 Sprint 09D CI 与发布工程
+* 当前阶段：Sprint 09D 已完成；下一项 Sprint 1.0
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.37
+* 当前代码版本：v0.15.0-alpha.38
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 09C 已完成；下一项为 Sprint 09D CI 与发布工程
+* 当前阶段：Sprint 09D 已完成；下一项 Sprint 1.0
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3030,3 +3030,11 @@ Backend/Worker 在加载业务模块前拒绝高于程序支持版本的数据�
 鉴权继续由既有 Bearer 中间件按 `novel_id` 执行，其他用户看到 HTTP 404；所有领域读取都显式限定同一 novel。Vue 工作台提供“导出小说”下载按钮并复用会话 Bearer token。Export 专项 `7/7`、Authentication `7/7`、Backend 全量 `490/490`、Frontend `19/19` 通过，Backend/Frontend/Worker 生产镜像构建成功。
 
 真实生产 drill 对已有 2 章 accepted manuscript 的小说执行两次 HTTP 导出，每包 11 个成员；逐成员长度/hash、响应 manifest hash 和两次 archive bytes 全部一致，临时 ZIP 已自动清理。Backend HTTP 200、OpenAPI `0.15.0-alpha.37` 且导出路由存在；Frontend `.37` 镜像重建后 HTTP 200，生产 bundle 包含“导出小说”入口；生产数据未修改。完整状态见 `docs/sprints/Sprint09C3.md`，验收记录保存在 `data/sprint09c3_acceptance.json`。Sprint 09C 已完成，下一项为 Sprint 09D CI 与发布工程。
+
+## v0.15.0-alpha.38 — Sprint 09D CI 与发布工程
+
+新增 PR/master CI 与 `v*` tag Release workflow，把 Backend 全量回归、Frontend test/build/bundle、两套 Compose config、Backend/Frontend/Worker 镜像构建和版本封板变为自动门禁。原先写死的 Windows Backend build context 已改为 `./backend`，可在不同安装目录和 Linux runner 使用；Backend `.dockerignore` 排除测试、字节码、缓存、数据、日志与本地环境文件，避免污染发布上下文。
+
+`app.release_engineering` 校验 Backend、Frontend 与 package-lock 四处版本、目标 tag、同版本 PASS acceptance 和 Compose 可移植性。源码 release ZIP 使用固定成员顺序/时间戳/压缩，内置逐文件长度与 SHA-256 manifest；manifest 只记录 acceptance path/sprint/PASS 摘要，不打包可能含生产标识的原始验收 JSON。独立 verify 拒绝篡改、重复/额外成员和不安全路径。tag workflow 同时导出三镜像 gzip、生成 `SHA256SUMS`、上传 Actions artifact 并创建或更新 GitHub Release，不假设未配置的镜像 registry。
+
+升级流程要求先完成 09C.1 离线一致备份；回滚必须先验证目标旧版本 schema 上限，数据库版本不兼容时禁止直接启动旧 Backend，只能从隔离验证过的升级前完整备份恢复。Release 专项 `8/8`、Backend 全量 `498/498`、Frontend `19/19`、两套 Compose config 与三镜像生产构建通过；`.38` release drill 生成 237 文件确定性源码包，并通过独立复验与逐字节重建对比，最终哈希记录在 acceptance 与制品 `SHA256SUMS`。完整状态见 `docs/sprints/Sprint09D.md`；Sprint 09D 已完成，下一项为 Sprint 1.0。

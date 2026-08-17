@@ -1,0 +1,65 @@
+{
+  "sprint": "09D",
+  "version": "0.15.0-alpha.38",
+  "recorded_at": "2026-08-17T10:35:45+08:00",
+  "tests": {
+    "release_engineering": {
+      "ran": 8,
+      "passed": 8,
+      "duration_seconds": 0.034
+    },
+    "backend_full": {
+      "ran": 498,
+      "passed": 498,
+      "duration_seconds": 141.642
+    },
+    "frontend": {
+      "ran": 19,
+      "passed": 19
+    },
+    "python_compileall": true,
+    "powershell_release_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "git_diff_check": true
+  },
+  "production_images": {
+    "backend": {
+      "built": true,
+      "image_sha256": "619ec1bc89995feff710a9c498e12dd6c3610367a03114234eadf96bcec4db6f",
+      "build_context_bytes": 54100
+    },
+    "frontend": {
+      "built": true,
+      "image_sha256": "e9e0d379ab7812c492f983eb29a2cd6b46c02f38515a258af9c3832f5801c869",
+      "build_context_bytes": 43050
+    },
+    "worker": {
+      "built": true,
+      "image_sha256": "9860cb8200d8c00b21aede47c6e719a93b685b6ff1a5d668f30808bb68a8ae2d",
+      "build_context_bytes": 20750
+    }
+  },
+  "automation": {
+    "ci_workflow_authored": true,
+    "release_workflow_authored": true,
+    "hosted_ci_executed": false,
+    "hosted_release_executed": false,
+    "local_equivalent_gates_passed": true,
+    "registry_push_performed": false
+  },
+  "release_artifact": {
+    "local_drill_passed": true,
+    "file_count": 237,
+    "sha256": "6bfd90628dc1c194459db24177cda9086188579a3ee6b56eb6e9bb2bafb0a0bb",
+    "independent_verify_passed": true,
+    "repeat_archive_bytes_identical": true,
+    "raw_acceptance_included": false,
+    "local_instruction_files_included": false,
+    "required_runtime_and_workflow_files_present": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "result": "PASS"
+}

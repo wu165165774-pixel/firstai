@@ -68,6 +68,9 @@ frontend/node_modules/
 frontend/dist/
 .npm-cache/
 
+# Release artifacts
+dist/
+
 
 # =====================
 # Docker
