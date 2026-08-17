@@ -32,6 +32,21 @@ tag 必须是 `v{version}`，且 `data/sprint*_acceptance.json` 至少有一份�
 - Python、Node、Nginx、Ollama 镜像均固定 SHA-256 digest。
 - 所有 GitHub Action 均固定完整 40 位 commit。
 - `release-compatibility.json` 的版本与 schema 常量一致，所有未知路径 fail closed。
+- `release-readiness.json` 与正式版本一致，所有必需 Sprint 有 PASS 记录，完整产品旅程的每个检查均为 true。
+
+## 正式版 Go/No-Go
+
+```powershell
+python -m app.release_engineering.cli go-no-go `
+  --repo-root . `
+  --expected-version 1.0.0
+```
+
+`local_decision=go` 表示历史能力验收和当前完整产品旅程足以允许创建正式 tag。`distribution_decision=pending_hosted_release` 表示 tag 尚未完成 Hosted CI 与 GitHub Release；它不是失败，也不能被描述成远端已发布。只有验收记录明确证明两项远端自动化实际成功时，分发决策才为 `go`。
+
+正式稳定版源码 package 会再次执行 Go/No-Go，并把无密钥、无业务正文的 readiness 摘要写入 release manifest。缺少必需 Sprint、当前版本产品旅程、任一 required check 或 automation 结构时均拒绝打包。
+
+当前 `v1.0.0` 本地 15/15 演练与九项历史 PASS 聚合已返回 `local_decision=go`。Hosted CI 和 GitHub Release 尚未执行，当前分发状态明确保持 `distribution_decision=pending_hosted_release`。
 
 ## 制品
 
@@ -49,7 +64,7 @@ SHA256SUMS
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\sprint09d_release_drill.ps1
 ```
 
-输出位于忽略目录 `dist/release-drill`。脚本验证版本/验收、Compose、制品 manifest，并重复生成以证明字节级确定性。
+输出位于忽略目录 `dist/release-drill`。脚本验证版本/验收、Go/No-Go、Compose、制品 manifest，并重复生成以证明字节级确定性。
 
 ## 升级
 

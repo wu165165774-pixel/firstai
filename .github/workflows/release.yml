@@ -64,6 +64,7 @@ jobs:
           npm run build --prefix frontend
           npm run verify:bundle --prefix frontend
           python -m app.release_engineering.cli validate --repo-root . --expected-version "$RELEASE_VERSION" --tag "$RELEASE_TAG"
+          python -m app.release_engineering.cli go-no-go --repo-root . --expected-version "$RELEASE_VERSION"
       - name: Build production images
         run: |
           printf '#!/usr/bin/env bash\nexec docker compose "$@"\n' | sudo tee /usr/local/bin/docker-compose >/dev/null

@@ -437,6 +437,221 @@ class ReleaseEngineeringService:
                     )
         return records
 
+    def readiness_contract(
+        self,
+        version: str | None = None,
+    ) -> dict[str, Any]:
+        value = self._read_json("release-readiness.json")
+        if (
+            value.get("format") != "novelforge-release-readiness"
+            or value.get("format_version") != 1
+        ):
+            raise ReleaseValidationError(
+                "Release readiness contract format is unsupported."
+            )
+        release_version = str(value.get("release_version") or "")
+        baseline_version = str(value.get("baseline_version") or "")
+        if (
+            _VERSION.fullmatch(release_version) is None
+            or _VERSION.fullmatch(baseline_version) is None
+            or release_version == baseline_version
+        ):
+            raise ReleaseValidationError(
+                "Release readiness version policy is invalid."
+            )
+        if version is not None and release_version != version:
+            raise ReleaseValidationError(
+                "Release readiness version does not match."
+            )
+
+        required = value.get("required_acceptance")
+        if not isinstance(required, list) or not required:
+            raise ReleaseValidationError(
+                "Release readiness acceptance requirements are invalid."
+            )
+        normalized: list[dict[str, str]] = []
+        seen_sprints: set[str] = set()
+        for item in required:
+            if not isinstance(item, dict) or set(item) != {
+                "sprint",
+                "capability",
+            }:
+                raise ReleaseValidationError(
+                    "Release readiness acceptance requirement is invalid."
+                )
+            sprint = str(item.get("sprint") or "")
+            capability = str(item.get("capability") or "")
+            if (
+                not sprint
+                or len(sprint) > 32
+                or re.fullmatch(r"[a-z0-9_]+", capability) is None
+                or sprint in seen_sprints
+            ):
+                raise ReleaseValidationError(
+                    "Release readiness acceptance requirements must be unique."
+                )
+            seen_sprints.add(sprint)
+            normalized.append(
+                {"sprint": sprint, "capability": capability}
+            )
+
+        journey_sprint = str(value.get("journey_sprint") or "")
+        checks = value.get("required_journey_checks")
+        if (
+            journey_sprint not in seen_sprints
+            or not isinstance(checks, list)
+            or not checks
+            or any(
+                not isinstance(item, str)
+                or re.fullmatch(r"[a-z0-9_]+", item) is None
+                for item in checks
+            )
+            or len(set(checks)) != len(checks)
+        ):
+            raise ReleaseValidationError(
+                "Release readiness product journey policy is invalid."
+            )
+        if value.get("hosted_release_required") is not True:
+            raise ReleaseValidationError(
+                "Hosted release must remain a formal distribution gate."
+            )
+        return {
+            **value,
+            "required_acceptance": normalized,
+            "required_journey_checks": list(checks),
+        }
+
+    def _all_acceptance_values(self) -> list[dict[str, Any]]:
+        data_dir = self.repo_root / "data"
+        records: list[dict[str, Any]] = []
+        if not data_dir.is_dir():
+            return records
+        for path in sorted(data_dir.glob("sprint*_acceptance.json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(value, dict):
+                continue
+            records.append(
+                {
+                    "path": path.relative_to(self.repo_root).as_posix(),
+                    "value": value,
+                }
+            )
+        return records
+
+    def go_no_go(
+        self,
+        *,
+        expected_version: str | None = None,
+    ) -> dict[str, Any]:
+        status = self.validate(expected_version=expected_version)
+        version = status["version"]
+        contract = self.readiness_contract(version)
+        records = self._all_acceptance_values()
+
+        accepted: list[dict[str, str]] = []
+        for requirement in contract["required_acceptance"]:
+            matches = [
+                record
+                for record in records
+                if record["value"].get("sprint") == requirement["sprint"]
+                and record["value"].get("result") == "PASS"
+                and _VERSION.fullmatch(
+                    str(record["value"].get("version") or "")
+                )
+                is not None
+            ]
+            if not matches:
+                raise ReleaseValidationError(
+                    "Required PASS acceptance is missing: "
+                    + requirement["sprint"]
+                )
+            selected = matches[-1]
+            accepted.append(
+                {
+                    **requirement,
+                    "path": selected["path"],
+                    "version": str(selected["value"].get("version") or ""),
+                }
+            )
+
+        journey_records = [
+            record
+            for record in records
+            if record["value"].get("sprint") == contract["journey_sprint"]
+            and record["value"].get("version") == version
+            and record["value"].get("result") == "PASS"
+        ]
+        if len(journey_records) != 1:
+            raise ReleaseValidationError(
+                "Exactly one current-version PASS product journey is required."
+            )
+        journey_record = journey_records[0]
+        journey = journey_record["value"].get("product_journey")
+        journey_checks = (
+            journey.get("checks") if isinstance(journey, dict) else None
+        )
+        if not isinstance(journey_checks, dict):
+            raise ReleaseValidationError(
+                "Product journey acceptance checks are missing."
+            )
+        failed_checks = [
+            item
+            for item in contract["required_journey_checks"]
+            if journey_checks.get(item) is not True
+        ]
+        if failed_checks:
+            raise ReleaseValidationError(
+                "Product journey checks are not PASS: "
+                + ", ".join(failed_checks)
+            )
+
+        automation = journey_record["value"].get("automation")
+        if (
+            not isinstance(automation, dict)
+            or type(automation.get("hosted_ci_executed")) is not bool
+            or type(automation.get("hosted_release_executed")) is not bool
+        ):
+            raise ReleaseValidationError(
+                "Product journey automation evidence is missing."
+            )
+        if (
+            journey_record["value"].get("production_data_modified") is not True
+            or journey_record["value"].get("secrets_recorded") is not False
+            or journey_record["value"].get("provider_endpoints_recorded")
+            is not False
+            or journey_record["value"].get("business_content_recorded")
+            is not False
+        ):
+            raise ReleaseValidationError(
+                "Product journey data-handling evidence is invalid."
+            )
+        hosted_ci = automation.get("hosted_ci_executed") is True
+        hosted_release = automation.get("hosted_release_executed") is True
+        distribution_decision = (
+            "go"
+            if hosted_ci and hosted_release
+            else "pending_hosted_release"
+        )
+        return {
+            "result": "ok",
+            "version": version,
+            "tag": f"v{version}",
+            "baseline_version": contract["baseline_version"],
+            "local_decision": "go",
+            "distribution_decision": distribution_decision,
+            "hosted_ci_executed": hosted_ci,
+            "hosted_release_executed": hosted_release,
+            "required_acceptance": accepted,
+            "journey_acceptance": journey_record["path"],
+            "journey_checks": {
+                item: True
+                for item in contract["required_journey_checks"]
+            },
+        }
+
     def validate(
         self,
         *,
@@ -527,6 +742,7 @@ class ReleaseEngineeringService:
             "docs/ROADMAP.md",
             "plugins/.gitkeep",
             "release-compatibility.json",
+            "release-readiness.json",
             ".github/dependabot.yml",
         }:
             return True
@@ -579,6 +795,9 @@ class ReleaseEngineeringService:
     ) -> dict[str, Any]:
         status = self.validate(expected_version=expected_version, tag=tag)
         version = status["version"]
+        readiness = None
+        if "-" not in version:
+            readiness = self.go_no_go(expected_version=version)
         acceptance = [item["path"] for item in status["acceptance"]]
         payload = self._source_files()
         manifest = {
@@ -597,6 +816,8 @@ class ReleaseEngineeringService:
                 for name, content in sorted(payload.items())
             ],
         }
+        if readiness is not None:
+            manifest["readiness"] = readiness
         archive = self._write_zip(
             {"release-manifest.json": _json_bytes(manifest), **payload}
         )
@@ -619,6 +840,7 @@ class ReleaseEngineeringService:
             "sha256": digest,
             "file_count": verified["file_count"],
             "acceptance": acceptance,
+            "readiness": readiness,
         }
 
     @staticmethod

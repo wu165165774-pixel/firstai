@@ -1,0 +1,59 @@
+{
+  "format": "novelforge-release-readiness",
+  "format_version": 1,
+  "release_version": "1.0.0",
+  "baseline_version": "1.0.0-rc.2",
+  "required_acceptance": [
+    {
+      "sprint": "09C.1",
+      "capability": "backup_restore"
+    },
+    {
+      "sprint": "09C.2",
+      "capability": "schema_migration"
+    },
+    {
+      "sprint": "09C.3",
+      "capability": "novel_export"
+    },
+    {
+      "sprint": "09D",
+      "capability": "release_engineering"
+    },
+    {
+      "sprint": "10A",
+      "capability": "plugin_catalog"
+    },
+    {
+      "sprint": "10B",
+      "capability": "plugin_runtime"
+    },
+    {
+      "sprint": "10C",
+      "capability": "deployment_security"
+    },
+    {
+      "sprint": "10D",
+      "capability": "dependency_rollback"
+    },
+    {
+      "sprint": "10E",
+      "capability": "product_journey"
+    }
+  ],
+  "journey_sprint": "10E",
+  "required_journey_checks": [
+    "project_created",
+    "story_bible_aligned",
+    "planner_candidate_only",
+    "planning_explicitly_accepted",
+    "workflow_idempotent",
+    "workflow_quality_gate_passed",
+    "manuscript_explicitly_accepted",
+    "fact_projection_completed",
+    "export_deterministic",
+    "restart_durable",
+    "user_scope_isolated"
+  ],
+  "hosted_release_required": true
+}

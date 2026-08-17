@@ -33,6 +33,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     assess.add_argument("--other-version", required=True)
     assess.add_argument("--schema-version", required=True, type=int)
+    readiness = subparsers.add_parser("go-no-go")
+    readiness.add_argument("--repo-root", default=".")
+    readiness.add_argument("--expected-version")
     return parser
 
 
@@ -53,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
                     operation=args.operation,
                     other_version=args.other_version,
                     schema_version=args.schema_version,
+                )
+            elif args.command == "go-no-go":
+                result = service.go_no_go(
+                    expected_version=args.expected_version,
                 )
             else:
                 result = service.package(

@@ -52,7 +52,7 @@ class PluginRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "requires": {
                 "plugin_api": 1,
                 "min_core_version": APP_VERSION,
-                "max_core_version_exclusive": "1.0.0",
+                "max_core_version_exclusive": "2.0.0",
             },
         }
         if manifest_version == 2:

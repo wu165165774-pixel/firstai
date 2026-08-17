@@ -1,0 +1,162 @@
+{
+  "sprint": "10E",
+  "version": "1.0.0",
+  "recorded_at": "2026-08-17T17:50:23+08:00",
+  "tests": {
+    "release_engineering": {
+      "ran": 14,
+      "passed": 14
+    },
+    "dependency_runtime_lock": {
+      "ran": 3,
+      "passed": 3
+    },
+    "schema_migrations": {
+      "ran": 10,
+      "passed": 10
+    },
+    "plugin_catalog": {
+      "ran": 9,
+      "passed": 9
+    },
+    "plugin_runtime": {
+      "ran": 12,
+      "passed": 12
+    },
+    "backend_full": {
+      "ran": 534,
+      "passed": 534,
+      "duration_seconds": 134.334
+    },
+    "frontend": {
+      "ran": 21,
+      "passed": 21
+    },
+    "powershell_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "git_diff_check": true,
+    "production_images_built": true,
+    "backend_runtime_matches_lock": true,
+    "worker_runtime_matches_lock": true
+  },
+  "dependency_contract": {
+    "backend_locked_packages": 34,
+    "backend_direct_packages": 11,
+    "backend_lock_sha256": "63e31675b37e1ab82accadb7a1a5ebfdc7b4cacfc33719c59be09a68ac02caae",
+    "frontend_locked_packages": 80,
+    "frontend_lock_sha256": "96624af243461505de65145f1009d63fb8bf5e80a2818d7b0fa4329b56288e82",
+    "digest_pinned_images": 4,
+    "commit_pinned_github_actions": 9
+  },
+  "compatibility": {
+    "schema_version": 1,
+    "upgrade_rc2_to_v1": "direct",
+    "rollback_v1_to_rc2": "direct",
+    "newer_schema_rollback": "restore_backup",
+    "unknown_path": "blocked"
+  },
+  "production_images": {
+    "backend": {
+      "built": true,
+      "image_sha256": "fcd06025639d2619266e96b331c61985ffe53940a2f6b58a74f6d664a74aeecc"
+    },
+    "frontend": {
+      "built": true,
+      "image_sha256": "0b62f0ccd32be029ee473a54653fce402891d8b3642189cb0b7e91ff84f462bc"
+    },
+    "worker": {
+      "built": true,
+      "image_sha256": "5348bf1f56f05a3ba33304b29e947e0596cdbd922d707aff03714c350bd1179b"
+    }
+  },
+  "product_journey": {
+    "result": "OK",
+    "user_id": "v1-release-journey-20260817T174054",
+    "novel_id": "3ae59779-ef4e-47d5-ad9a-3232bd98acbf",
+    "canonical_entity_id": "char_ed13361c5bf547c38fce3f33a0a6f75a",
+    "canonical_location_id": "loc_001",
+    "planning": {
+      "targets": 3,
+      "generations": 3,
+      "total_tokens": 9168,
+      "candidate_only": true,
+      "explicitly_accepted": true,
+      "novel_plan_revision": 2,
+      "story_arc_id": "2867040f-4887-4891-b95a-aef6c6029bd5",
+      "story_arc_revision": 1,
+      "chapter_plan_id": "d549e90c-fc22-4f88-8214-278d935f5cba",
+      "chapter_plan_revision": 1
+    },
+    "workflow": {
+      "run_id": "0868a351-ea78-4092-a008-1f2aa2044e1e",
+      "attempts": 2,
+      "successful_attempt": 2,
+      "idempotent": true,
+      "execution_status": "succeeded",
+      "workflow_status": "completed",
+      "quality_gate_passed": true
+    },
+    "manuscript": {
+      "chapter_id": "cd179d75-595c-4563-aa92-c85e1dd68c0a",
+      "revision": 1,
+      "explicitly_accepted": true
+    },
+    "fact_projection": {
+      "status": "completed",
+      "total": 2,
+      "completed": 2,
+      "failed": 0
+    },
+    "export": {
+      "files": 10,
+      "accepted_chapters": 1,
+      "manifest_sha256": "f98d40b92f7b98868f3fa905543ba83ee92e83490042ac8544eae423c72f3e19",
+      "deterministic": true
+    },
+    "runtime": {
+      "backend_status": 200,
+      "frontend_status": 200,
+      "ollama_status": 200,
+      "worker_running": true,
+      "restart_durable": true,
+      "user_scope_isolated": true
+    },
+    "checks": {
+      "project_created": true,
+      "story_bible_aligned": true,
+      "planner_candidate_only": true,
+      "planning_explicitly_accepted": true,
+      "workflow_idempotent": true,
+      "workflow_quality_gate_passed": true,
+      "manuscript_explicitly_accepted": true,
+      "fact_projection_completed": true,
+      "export_deterministic": true,
+      "restart_durable": true,
+      "user_scope_isolated": true
+    }
+  },
+  "automation": {
+    "hosted_ci_executed": false,
+    "hosted_release_executed": false,
+    "local_equivalent_gates_passed": true
+  },
+  "release_decision": {
+    "local": "go",
+    "distribution": "pending_hosted_release"
+  },
+  "release_artifact": {
+    "local_drill_passed": true,
+    "file_count": 266,
+    "sha256": "cbfcb3c3024aa3dabd1a24d55f7dca6f26fe5b1057f7c1814abac80eb4dc0ec9",
+    "independent_verify_passed": true,
+    "repeat_archive_bytes_identical": true,
+    "raw_acceptance_included": false,
+    "readiness_summary_included": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "production_data_modified": true,
+  "result": "PASS"
+}

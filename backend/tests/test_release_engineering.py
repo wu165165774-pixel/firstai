@@ -112,11 +112,48 @@ class ReleaseFixture:
             ),
         )
         self._write(
+            "release-readiness.json",
+            json.dumps(
+                {
+                    "format": "novelforge-release-readiness",
+                    "format_version": 1,
+                    "release_version": "1.2.3-alpha.4",
+                    "baseline_version": "1.2.3-alpha.3",
+                    "required_acceptance": [
+                        {
+                            "sprint": "09D",
+                            "capability": "release_engineering",
+                        }
+                    ],
+                    "journey_sprint": "09D",
+                    "required_journey_checks": [
+                        "project_created",
+                        "export_deterministic",
+                    ],
+                    "hosted_release_required": True,
+                }
+            ),
+        )
+        self._write(
             "data/sprint09d_acceptance.json",
             json.dumps(
                 {
                     "sprint": "09D",
                     "version": "1.2.3-alpha.4",
+                    "product_journey": {
+                        "checks": {
+                            "project_created": True,
+                            "export_deterministic": True,
+                        }
+                    },
+                    "automation": {
+                        "hosted_ci_executed": False,
+                        "hosted_release_executed": False,
+                    },
+                    "production_data_modified": True,
+                    "secrets_recorded": False,
+                    "provider_endpoints_recorded": False,
+                    "business_content_recorded": False,
                     "result": "PASS",
                 }
             ),
@@ -244,6 +281,67 @@ class ReleaseEngineeringTests(ReleaseFixture, unittest.TestCase):
         )
         self.assertEqual(rollback["decision"], "restore_backup")
 
+    def test_go_no_go_aggregates_required_acceptance_and_remote_boundary(
+        self,
+    ) -> None:
+        result = self.service.go_no_go(expected_version="1.2.3-alpha.4")
+        self.assertEqual(result["local_decision"], "go")
+        self.assertEqual(
+            result["distribution_decision"],
+            "pending_hosted_release",
+        )
+        self.assertEqual(result["required_acceptance"][0]["sprint"], "09D")
+        self.assertTrue(result["journey_checks"]["export_deterministic"])
+
+        acceptance = json.loads(
+            (self.root / "data/sprint09d_acceptance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        acceptance["automation"]["hosted_ci_executed"] = True
+        acceptance["automation"]["hosted_release_executed"] = True
+        self._write(
+            "data/sprint09d_acceptance.json",
+            json.dumps(acceptance),
+        )
+        self.assertEqual(
+            self.service.go_no_go()["distribution_decision"],
+            "go",
+        )
+
+    def test_go_no_go_fails_closed_on_missing_or_failed_evidence(self) -> None:
+        acceptance = json.loads(
+            (self.root / "data/sprint09d_acceptance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        acceptance["product_journey"]["checks"][
+            "export_deterministic"
+        ] = False
+        self._write(
+            "data/sprint09d_acceptance.json",
+            json.dumps(acceptance),
+        )
+        with self.assertRaisesRegex(
+            ReleaseValidationError,
+            "Product journey checks are not PASS",
+        ):
+            self.service.go_no_go()
+
+        acceptance["product_journey"]["checks"][
+            "export_deterministic"
+        ] = True
+        acceptance["result"] = "FAIL"
+        self._write(
+            "data/sprint09d_acceptance.json",
+            json.dumps(acceptance),
+        )
+        with self.assertRaisesRegex(
+            ReleaseValidationError,
+            "Release acceptance is not PASS",
+        ):
+            self.service.go_no_go()
+
     def test_package_is_deterministic_scoped_and_self_verifying(self) -> None:
         self._write("data/private.db", "must-not-ship")
         first = self.service.package(self.root / "dist-one")
@@ -264,6 +362,7 @@ class ReleaseEngineeringTests(ReleaseFixture, unittest.TestCase):
             self.assertIn("frontend/vite.config.js", names)
             self.assertIn("plugins/.gitkeep", names)
             self.assertIn("release-compatibility.json", names)
+            self.assertIn("release-readiness.json", names)
             self.assertIn(".github/dependabot.yml", names)
             self.assertNotIn("data/sprint09d_acceptance.json", names)
             self.assertNotIn("data/private.db", names)
@@ -295,6 +394,18 @@ class ReleaseEngineeringTests(ReleaseFixture, unittest.TestCase):
                     str(self.root),
                     "--tag",
                     "v1.2.3-alpha.4",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            release_main(
+                [
+                    "go-no-go",
+                    "--repo-root",
+                    str(self.root),
+                    "--expected-version",
+                    "1.2.3-alpha.4",
                 ]
             ),
             0,

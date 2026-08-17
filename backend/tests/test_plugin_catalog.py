@@ -25,7 +25,7 @@ def manifest(
     *,
     plugin_api: int = 1,
     minimum: str = APP_VERSION,
-    maximum: str | None = "1.0.0",
+    maximum: str | None = "2.0.0",
 ) -> dict:
     requires = {
         "plugin_api": plugin_api,
@@ -116,7 +116,7 @@ class PluginCatalogTests(unittest.TestCase):
             ("wrong-api", manifest("wrong.api", plugin_api=2), "plugin_api_incompatible"),
             (
                 "too-new",
-                manifest("too.new", minimum="1.0.0", maximum="2.0.0"),
+                manifest("too.new", minimum="1.0.1", maximum="2.0.0"),
                 "core_version_too_old",
             ),
             (

@@ -59,7 +59,7 @@ PLUGIN_PERMISSION_GRANTS_JSON={"example.plugin":["model_access"]}
   "requires": {
     "plugin_api": 1,
     "min_core_version": "1.0.0-rc.1",
-    "max_core_version_exclusive": "1.0.0"
+    "max_core_version_exclusive": "2.0.0"
   },
   "integrity": {
     "entry_point_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

@@ -3,6 +3,13 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v1.0.0
+
+- Added a fail-closed release-readiness contract and `go-no-go` CLI that aggregate required acceptance evidence while keeping local release admission distinct from pending Hosted CI/Release distribution.
+- Added a real local-Qwen product journey drill covering Project/Story Bible/Canon alignment, candidate-only Planner generation, explicit planning acceptance, idempotent async Workflow, quality gate, explicit Manuscript acceptance, fact projection, deterministic export, restart durability, and user-scope isolation.
+- Promoted the five application/package identities to `1.0.0` without changing schema v1 or the released planning, manuscript, plugin, authentication, deployment, or dependency boundaries.
+- Recorded a 15/15 local release drill with 534/534 Backend tests, 21/21 Frontend tests, complete real-Qwen journey evidence, deterministic export, and `local_decision=go`; Hosted distribution remains pending until CI and GitHub Release actually succeed.
+
 ## v1.0.0-rc.2
 
 - Locked the accepted Backend Linux/Python runtime to 34 exact distributions and made Docker/CI install from the lock with `pip check` instead of resolving broad project ranges.

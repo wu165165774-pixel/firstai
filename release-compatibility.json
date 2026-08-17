@@ -1,7 +1,7 @@
 {
   "format": "novelforge-release-compatibility",
   "format_version": 1,
-  "release_version": "1.0.0-rc.2",
+  "release_version": "1.0.0",
   "schema": {
     "minimum_runtime_version": 0,
     "current_version": 1,
@@ -19,11 +19,17 @@
       "from_schema_version": 1,
       "decision": "direct",
       "backup_required": true
+    },
+    {
+      "from_version": "1.0.0-rc.2",
+      "from_schema_version": 1,
+      "decision": "direct",
+      "backup_required": true
     }
   ],
   "rollback": [
     {
-      "to_version": "1.0.0-rc.1",
+      "to_version": "1.0.0-rc.2",
       "maximum_schema_version": 1,
       "compatible_decision": "direct",
       "newer_schema_decision": "restore_backup",

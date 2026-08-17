@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v1.0.0-rc.2
+* 当前代码版本：v1.0.0
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10D 已完成，下一项为完整产品旅程与 v1.0 Go/No-Go
+* 当前阶段：Sprint 10E 本地验收与 Go/No-Go 已通过，等待 Hosted CI/Release
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v1.0.0-rc.2
+* 当前代码版本：v1.0.0
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10D 已完成，下一项为完整产品旅程与 v1.0 Go/No-Go
+* 当前阶段：Sprint 10E 本地验收与 Go/No-Go 已通过，等待 Hosted CI/Release
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3082,3 +3082,13 @@ Python、Node、Nginx 与 Ollama 镜像均固定到 SHA-256 digest，9 个 GitHu
 真实 lock contract 已确认 Backend 34 包、Frontend 80 包、4 个 digest-pinned image 和 9 个 commit-pinned Action。Release Engineering `12/12`、Dependency Runtime Lock `3/3`、Schema Migration `10/10`、Frontend `21/21` 与 Backend 全量 `532/532` 均通过；Python compileall、两套 Compose config、`git diff --check`、三镜像构建和 Backend/Worker 镜像内 lock 精确对照均通过。
 
 离线备份 `sprint10d-20260817T160013` 与 9 文件隔离恢复通过。RC1 Backend 只挂载隔离恢复目录，在 schema v1 上启动并返回 HTTP 200；RC2 Backend/Frontend 均返回 HTTP 200，Worker 正常运行，清理复验确认回滚探针已删除。三镜像分别为 `43ee7fb5...53fa`、`0b62f0cc...62bc`、`f801cc6c...2b29`。完整边界见 `docs/operations/DEPENDENCY_LOCKS.md`、`docs/sprints/Sprint10D.md` 与 `data/sprint10d_acceptance.json`；Sprint 10D 已完成，下一项为完整产品旅程、RC 缺陷清零和正式 `v1.0.0` Go/No-Go。
+
+## v1.0.0 — Sprint 10E 完整产品旅程与 Go/No-Go
+
+五处应用与包版本身份已提升到正式 `1.0.0`，schema 继续保持 v1，生产依赖继续使用 RC2 已验收 lock 和 digest。兼容矩阵新增 RC2 -> 1.0 direct 升级与 1.0 -> RC2 direct 回滚；任何高于 RC2 上限的 schema 仍要求 `restore_backup`，未知路径继续 blocked。
+
+新增 `release-readiness.json` 和 `release_engineering.cli go-no-go`。契约聚合 09C.1 备份恢复、09C.2 Schema Migration、09C.3 导出、09D 发布工程、10A/10B 插件、10C 部署安全、10D 依赖回滚及 10E 产品旅程九项 PASS。10E 必须对 Project 创建、Story Bible/Canon 对齐、Planner candidate-only、规划显式接受、Workflow 幂等和质量门、Manuscript 显式接受、事实投影、确定性导出、重启持久性与用户隔离逐项提供 true 证据，缺失或 false 均 fail closed。
+
+本地 `local_decision=go` 只表示允许创建正式 tag；若 Hosted CI 与 Hosted Release 尚未实际成功，`distribution_decision` 保持 `pending_hosted_release`。正式版源码 package 会嵌入 readiness 摘要，并在生成前强制执行 Go/No-Go，不能只靠手写版本号或单份 PASS 绕过历史能力聚合。
+
+`scripts/sprint10e_v1_release_drill.ps1` 已完成 15/15 本地验收：Frontend 21/21，Backend 专项 Release Engineering 14/14、Dependency Lock 3/3、Schema Migration 10/10、Plugin Catalog 9/9、Plugin Runtime 12/12，Backend 全量 534/534。真实 `qwen3:8b` 旅程完成三阶段 candidate-only Planner 与显式接受；首次 Workflow 的 `review_parse_failed` 被保留审计，第二次通过完整质量门。Manuscript revision 1 经显式接受后完成 2/2 事实投影，10 文件导出两次确定性一致，manifest SHA-256 为 `f98d40b92f7b98868f3fa905543ba83ee92e83490042ac8544eae423c72f3e19`；Backend 重启持久性与用户隔离均通过。Go/No-Go 返回 `local_decision=go`，Hosted CI/Release 未执行，因此 `distribution_decision=pending_hosted_release`。

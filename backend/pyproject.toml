@@ -1,6 +1,6 @@
 [project]
 name = "novelforge-backend"
-version = "1.0.0-rc.2"
+version = "1.0.0"
 description = "AI Novel Writing Engine Backend"
 requires-python = ">=3.12"
 

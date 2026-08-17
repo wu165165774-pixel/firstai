@@ -40,6 +40,7 @@ venv/
 # Application data
 data/*
 !data/.gitkeep
+!data/sprint10e_acceptance.json
 
 # Logs
 logs/
