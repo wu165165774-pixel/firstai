@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import re
+import tomllib
 import zipfile
 
 from pathlib import Path, PurePosixPath
@@ -63,11 +64,23 @@ class ReleaseEngineeringService:
         match = _BACKEND_VERSION.search(backend_text)
         if match is None:
             raise ReleaseValidationError("Backend APP_VERSION is invalid.")
+        package_metadata_path = self.repo_root / "backend/pyproject.toml"
+        try:
+            package_metadata = tomllib.loads(
+                package_metadata_path.read_text(encoding="utf-8")
+            )
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise ReleaseValidationError(
+                "Backend package metadata is invalid."
+            ) from exc
         package = self._read_json("frontend/package.json")
         lock = self._read_json("frontend/package-lock.json")
         lock_root = lock.get("packages", {}).get("", {})
         values = {
             "backend": match.group(1),
+            "backend_package": str(
+                package_metadata.get("project", {}).get("version") or ""
+            ),
             "frontend": str(package.get("version") or ""),
             "frontend_lock": str(lock.get("version") or ""),
             "frontend_lock_root": str(lock_root.get("version") or ""),
@@ -108,7 +121,8 @@ class ReleaseEngineeringService:
         unique = set(versions.values())
         if len(unique) != 1:
             raise ReleaseValidationError(
-                "Backend, Frontend and lockfile versions do not match."
+                "Backend application/package, Frontend and lockfile versions "
+                "do not match."
             )
         version = versions["backend"]
         if expected_version is not None and expected_version != version:

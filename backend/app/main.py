@@ -26,6 +26,7 @@ from app.core.exception_handler import novelforge_exception_handler
 from app.core.exceptions import NovelForgeException
 from app.core.middleware import RequestLogMiddleware
 from app.core.auth import authorize_request, validate_auth_configuration
+from app.core.deployment_security import validate_deployment_security
 from app.fact_projection.service import fact_projection_service
 from app.plugins.bootstrap import plugin_catalog_service, plugin_runtime_manager
 from app.plugins.runtime import configured_permission_grants
@@ -49,6 +50,15 @@ async def lifespan(app: FastAPI):
     )
 
     validate_auth_configuration()
+    deployment_security = validate_deployment_security()
+    logger.info(
+        "Deployment security validation complete: "
+        f"bind_host={deployment_security.bind_host}, "
+        f"loopback_only={str(deployment_security.loopback_only).lower()}, "
+        f"auth_enabled={str(deployment_security.auth_enabled).lower()}, "
+        f"debug_enabled={str(deployment_security.debug_enabled).lower()}, "
+        f"insecure_override={str(deployment_security.insecure_override).lower()}"
+    )
     configured_permission_grants()
     validate_plugin_configuration(plugin_catalog_service)
     plugin_catalog = await plugin_runtime_manager.activate_enabled()

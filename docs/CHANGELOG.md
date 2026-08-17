@@ -3,6 +3,12 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v1.0.0-rc.1
+
+- Changed Backend, Frontend, and Ollama host-port defaults to loopback-only bindings and disabled Backend debug mode by default.
+- Added a startup deployment-security gate that rejects unauthenticated or debug-enabled non-loopback exposure unless the operator explicitly accepts the risk.
+- Added baseline Nginx browser security headers, repository-level deployment contract tests, live binding/header verification, and Backend Python package version identity to the release gate.
+
 ## v0.16.0-alpha.2
 
 - Added an opt-in trusted local plugin runtime with Manifest v2 entry-point SHA-256 verification, single-read verified source execution, explicit permission admission, and default-off Compose configuration.

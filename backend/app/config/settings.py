@@ -10,7 +10,14 @@ class Settings(BaseSettings):
 
     api_version: str = "v1"
 
-    debug: bool = True
+    debug: bool = False
+
+    # Host-side Compose exposure policy. NovelForge is local-only by default.
+    # Non-loopback exposure requires authentication and DEBUG=false unless the
+    # operator explicitly accepts the risk through the insecure override.
+    novelforge_bind_host: str = "127.0.0.1"
+
+    allow_insecure_network_exposure: bool = False
 
     # Authentication is opt-in for local development. When enabled,
     # tokens are loaded from a JSON object without ever being returned

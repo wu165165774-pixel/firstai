@@ -17,6 +17,7 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - 小说级确定性 ZIP 导出：仅包含 accepted manuscript、当前规划与逐文件 SHA-256 manifest。
 - CI 与 tag 发布工程：自动回归、三镜像构建、确定性源码制品、checksum 及升级/回滚 runbook。
 - 默认关闭的本地可信插件运行时：Manifest v2 完整性、Plugin API/Core SemVer 兼容、显式权限授权、事务式扩展注册、生命周期回滚和管理员 Catalog。
+- RC 默认部署安全：宿主端口仅绑定 `127.0.0.1`、Debug 默认关闭、非本机暴露 fail closed，并由 Nginx 返回基础浏览器安全响应头。
 
 ## 启动
 
@@ -32,6 +33,8 @@ docker-compose -f docker-compose.yml -f docker-compose.worker.yml up -d --build
 - Backend API：`http://localhost:18080`
 - OpenAPI：`http://localhost:18080/docs`
 - Ollama：`http://localhost:11434`
+
+三个宿主端口默认只监听 `127.0.0.1`。不要为了远程访问直接改成 `0.0.0.0`；非本机绑定至少要求启用 Bearer 鉴权并关闭 Debug，面向不可信网络时还应在本机 loopback 前增加 HTTPS 反向代理与防火墙。完整边界见 [部署安全说明](docs/operations/DEPLOYMENT_SECURITY.md)。
 
 工作台通过 Nginx 将同源 `/api/` 请求代理到 Backend，不依赖浏览器跨域配置。开发模式默认关闭鉴权；首次进入时填写用于隔离项目的 `user_id`。
 

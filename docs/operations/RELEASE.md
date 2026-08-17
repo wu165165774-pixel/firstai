@@ -1,5 +1,9 @@
 # CI、发布、升级与回滚
 
+## RC 默认部署安全门禁
+
+正式发布镜像必须保持宿主 Backend/Frontend/Ollama 端口为 loopback-only 默认绑定，Backend `DEBUG=false`，插件执行默认关闭。任何非 loopback 绑定都必须通过启动安全策略；面向不可信网络时继续使用本机 loopback，并在前方部署 HTTPS 反向代理和防火墙。发布验收必须核对实际 Docker HostIp，而不是只检查 Compose 文本。完整策略见 `docs/operations/DEPLOYMENT_SECURITY.md`。
+
 ## 自动化边界
 
 - `.github/workflows/ci.yml`：master push、Pull Request 和手工触发时执行 Backend 全量测试、Frontend 测试/构建/bundle 校验、两套 Compose 解析以及 Backend/Frontend/Worker 镜像构建。
@@ -8,10 +12,11 @@
 
 ## 版本门禁
 
-以下四处必须完全一致：
+以下五处必须完全一致：
 
 ```text
 backend/app/version.py
+backend/pyproject.toml project.version
 frontend/package.json
 frontend/package-lock.json root version
 frontend/package-lock.json packages[""].version

@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.16.0-alpha.2
+* 当前代码版本：v1.0.0-rc.1
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10B 已完成；下一项为 1.0 Release Candidate 收口
+* 当前阶段：Sprint 10C 已完成；下一项为 Sprint 10D RC 依赖锁定与升级/回滚矩阵
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.16.0-alpha.2
+* 当前代码版本：v1.0.0-rc.1
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10B 已完成；下一项为 1.0 Release Candidate 收口
+* 当前阶段：Sprint 10C 已完成；下一项为 Sprint 10D RC 依赖锁定与升级/回滚矩阵
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3060,3 +3060,13 @@ Backend 与独立 Worker 都在启动时激活，在正常退出、Worker 异常
 Plugin Runtime 专项 `12/12`、Plugin Catalog `9/9`、Worker `9/9`、Authentication `7/7`、Release Engineering `8/8`、Schema Migration `10/10`、Backend 全量 `519/519` 与 Frontend `19/19` 均通过；Python compileall、PowerShell drill 语法、两套 Compose config、`git diff --check` 和 Frontend Docker/Vite 生产构建通过。
 
 真实 live drill 使用不进入 Git 的临时 Manifest v2 fixture，在 Backend 和 Worker 两个容器内完成完整性固定、权限准入和实际激活；Backend Catalog `loaded=true`，Worker 激活标记存在，三服务健康。演练随后重建 Backend/Worker 恢复 `PLUGIN_EXECUTION_ENABLED=false`，精确删除 fixture，业务数据未修改。Backend/Frontend/Worker 镜像分别为 `45d48255...d4ad`、`e9e0d379...c869`、`22d6dc67...c575`。完整状态见 `docs/sprints/Sprint10B.md` 和 `docs/operations/PLUGINS.md`；Sprint 10B 已完成，下一项为 1.0 Release Candidate 收口。
+
+## v1.0.0-rc.1 — Sprint 10C 1.0 RC 本地部署硬化
+
+标准 Compose 将 Frontend `18081` 与 Backend `18080` 默认绑定到 `127.0.0.1`，Ollama `11434` 固定为 loopback；Backend Settings 和 Compose 同时改为 `DEBUG=false`。新启动门在插件加载与索引恢复之前校验部署暴露：绑定只接受 IPv4 字面量，非 loopback 必须启用鉴权并关闭 Debug，否则以稳定 `unsafe_network_exposure` 拒绝启动；显式风险 override 会记录到启动状态。
+
+Nginx 关闭版本暴露，并为 SPA、静态资源、healthz 与代理 API 增加 nosniff、frame deny、no-referrer 和同源 CSP。Release Engineering 现在同时校验应用版本、Backend Python 包 `pyproject.toml`、Frontend 和 lockfile 五处身份，避免 RC 制品内部版本分裂。
+
+Deployment Security 专项 `6/6`、Release Engineering `9/9`、Plugin Catalog `9/9`、Plugin Runtime `12/12`、Authentication `7/7`、Frontend `21/21` 与 Backend 全量 `526/526` 均通过；Python compileall、两套 Compose config 和 `git diff --check` 通过，三镜像生产构建完成。
+
+真实 RC 安全演练确认 Backend、Frontend 与 Ollama 分别只绑定 `127.0.0.1:18080`、`127.0.0.1:18081` 与 `127.0.0.1:11434`；不安全的非 loopback 暴露 fail closed，鉴权启用且 Debug 关闭的配置可准入。运行态 Debug、风险 override 和插件执行均关闭，安全响应头存在，Backend/Frontend/Ollama HTTP 200，Worker 正常运行。三镜像分别为 `dcd952e4...a0ee`、`0b62f0cc...62bc`、`b006f3e3...41c9`。完整边界见 `docs/operations/DEPLOYMENT_SECURITY.md`，验收记录保存在 `data/sprint10c_acceptance.json`；Sprint 10C 已完成，下一项为 Sprint 10D RC 依赖锁定与升级/回滚矩阵。

@@ -10,7 +10,7 @@ services:
     container_name: novelforge-frontend
 
     ports:
-      - "18081:80"
+      - "${NOVELFORGE_BIND_HOST:-127.0.0.1}:18081:80"
 
     depends_on:
       - backend
@@ -33,7 +33,9 @@ services:
     environment:
       API_VERSION: v1
       APP_NAME: NovelForge
-      DEBUG: "true"
+      DEBUG: "${DEBUG:-false}"
+      NOVELFORGE_BIND_HOST: "${NOVELFORGE_BIND_HOST:-127.0.0.1}"
+      ALLOW_INSECURE_NETWORK_EXPOSURE: "${ALLOW_INSECURE_NETWORK_EXPOSURE:-false}"
       QWEN_BASE_URL: http://ollama:11434
       QWEN_MODEL: qwen3:8b
       OLLAMA_BASE_URL: http://ollama:11434
@@ -48,7 +50,7 @@ services:
       FAISS_INDEX_DIR: /app/data/vector_db
 
     ports:
-      - "18080:8000"
+      - "${NOVELFORGE_BIND_HOST:-127.0.0.1}:18080:8000"
 
     volumes:
       - ./backend:/app
@@ -65,7 +67,7 @@ services:
     container_name: novelforge-ollama
 
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
 
     volumes:
       - ollama_data:/root/.ollama

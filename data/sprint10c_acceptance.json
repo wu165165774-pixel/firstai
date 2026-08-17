@@ -1,0 +1,101 @@
+{
+  "sprint": "10C",
+  "version": "1.0.0-rc.1",
+  "recorded_at": "2026-08-17T15:34:51+08:00",
+  "tests": {
+    "deployment_security": {
+      "ran": 6,
+      "passed": 6,
+      "duration_seconds": 3.224
+    },
+    "release_engineering": {
+      "ran": 9,
+      "passed": 9,
+      "duration_seconds": 0.039
+    },
+    "plugin_catalog": {
+      "ran": 9,
+      "passed": 9,
+      "duration_seconds": 0.904
+    },
+    "plugin_runtime": {
+      "ran": 12,
+      "passed": 12,
+      "duration_seconds": 3.206
+    },
+    "authentication": {
+      "ran": 7,
+      "passed": 7,
+      "duration_seconds": 4.334
+    },
+    "backend_full": {
+      "ran": 526,
+      "passed": 526,
+      "duration_seconds": 113.046
+    },
+    "frontend": {
+      "ran": 21,
+      "passed": 21
+    },
+    "frontend_production_build": true,
+    "python_compileall": true,
+    "powershell_security_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "git_diff_check": true
+  },
+  "deployment_security": {
+    "loopback_default": true,
+    "unsafe_non_loopback_exposure_blocked": true,
+    "authenticated_non_loopback_exposure_allowed": true,
+    "backend_binding": "127.0.0.1:18080",
+    "frontend_binding": "127.0.0.1:18081",
+    "ollama_binding": "127.0.0.1:11434",
+    "debug_enabled": false,
+    "insecure_override_enabled": false,
+    "security_headers_verified": true,
+    "plugin_execution_enabled": false
+  },
+  "production_images": {
+    "backend": {
+      "built": true,
+      "image_sha256": "dcd952e47546d6d120f7c12ef9160c6152f6baaf623d736b3a3e8e33dc49a0ee"
+    },
+    "frontend": {
+      "built": true,
+      "image_sha256": "0b62f0ccd32be029ee473a54653fce402891d8b3642189cb0b7e91ff84f462bc"
+    },
+    "worker": {
+      "built": true,
+      "image_sha256": "b006f3e38c96d58d677a390f12fca6a5fbc10c955723a06ff2b5e451750941c9"
+    }
+  },
+  "live_drill": {
+    "result": "OK",
+    "openapi_version": "1.0.0-rc.1",
+    "backend_status": 200,
+    "frontend_status": 200,
+    "ollama_status": 200,
+    "worker_running": true,
+    "actual_host_bindings_verified": true,
+    "runtime_flags_verified": true,
+    "security_headers_verified": true
+  },
+  "automation": {
+    "hosted_ci_executed": false,
+    "hosted_release_executed": false,
+    "local_equivalent_gates_passed": true
+  },
+  "release_artifact": {
+    "local_drill_passed": true,
+    "file_count": 254,
+    "sha256": "9d915635042fe86cbac4eb739369321ec358c1dce3e8eeece2fd1c1a1c59b826",
+    "independent_verify_passed": true,
+    "repeat_archive_bytes_identical": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "production_data_modified": false,
+  "result": "PASS"
+}

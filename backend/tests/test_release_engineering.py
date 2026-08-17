@@ -23,7 +23,10 @@ class ReleaseFixture:
         self._write("backend/app/main.py", "VALUE = 1\n")
         self._write("backend/Dockerfile", "FROM python:3.12-slim\n")
         self._write("backend/.dockerignore", "__pycache__/\n")
-        self._write("backend/pyproject.toml", "[project]\nname='fixture'\n")
+        self._write(
+            "backend/pyproject.toml",
+            "[project]\nname='fixture'\nversion='1.2.3-alpha.4'\n",
+        )
         self._write("frontend/package.json", json.dumps({"version": "1.2.3-alpha.4"}))
         self._write(
             "frontend/package-lock.json",
@@ -79,6 +82,14 @@ class ReleaseEngineeringTests(ReleaseFixture, unittest.TestCase):
 
     def test_mismatched_frontend_or_lock_version_fails_closed(self) -> None:
         self._write("frontend/package.json", json.dumps({"version": "1.2.3"}))
+        with self.assertRaisesRegex(ReleaseValidationError, "do not match"):
+            self.service.validate()
+
+    def test_mismatched_backend_package_version_fails_closed(self) -> None:
+        self._write(
+            "backend/pyproject.toml",
+            "[project]\nname='fixture'\nversion='1.2.3-alpha.3'\n",
+        )
         with self.assertRaisesRegex(ReleaseValidationError, "do not match"):
             self.service.validate()
 
