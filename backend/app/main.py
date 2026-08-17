@@ -27,6 +27,7 @@ from app.core.exceptions import NovelForgeException
 from app.core.middleware import RequestLogMiddleware
 from app.core.auth import authorize_request, validate_auth_configuration
 from app.fact_projection.service import fact_projection_service
+from app.plugins.service import validate_plugin_configuration
 from app.rag.consistency import memory_index_consistency_service
 from app.knowledge.manager import external_knowledge_manager
 from app.version import APP_VERSION
@@ -46,6 +47,13 @@ async def lifespan(app: FastAPI):
     )
 
     validate_auth_configuration()
+    plugin_catalog = validate_plugin_configuration()
+    logger.info(
+        "Plugin catalog validation complete: "
+        f"discovered={len(plugin_catalog.plugins)}, "
+        f"enabled={len(plugin_catalog.configured_enabled)}, "
+        "execution_enabled=false"
+    )
 
     try:
         result = await memory_index_consistency_service.check_and_repair()
@@ -245,4 +253,13 @@ app.include_router(
     auth_router,
     prefix="/api/v1",
     tags=["Authentication"],
+)
+
+from app.api.v1.plugins import router as plugin_router
+
+app.include_router(
+    plugin_router,
+    prefix="/api/v1",
+    tags=["Plugins"],
+    dependencies=protected_dependencies,
 )

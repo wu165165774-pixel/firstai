@@ -71,6 +71,11 @@ frontend/dist/
 # Release artifacts
 dist/
 
+# Locally installed plugins are operator-managed and may contain third-party
+# code or credentials. Only the empty mount-point marker is tracked.
+plugins/*
+!plugins/.gitkeep
+
 
 # =====================
 # Docker

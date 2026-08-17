@@ -210,6 +210,7 @@ def _requires_admin(path: str) -> bool:
         "/api/v1/workflows/dead-letter",
         "/api/v1/workflows/operations",
         "/api/v1/workflows/metrics",
+        "/api/v1/plugins",
     )
     return path.startswith(prefixes)
 

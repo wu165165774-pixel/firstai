@@ -41,6 +41,8 @@ services:
       OLLAMA_EMBEDDING_DIMENSION: "1024"
       AUTH_ENABLED: "${AUTH_ENABLED:-false}"
       AUTH_TOKENS_JSON: "${AUTH_TOKENS_JSON:-{}}"
+      PLUGIN_ROOT: /app/plugins
+      PLUGIN_ENABLED_JSON: "${PLUGIN_ENABLED_JSON:-[]}"
       FAISS_INDEX_DIR: /app/data/vector_db
 
     ports:
@@ -49,6 +51,7 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
+      - ./plugins:/app/plugins:ro
     depends_on:
       - ollama
 

@@ -3,6 +3,12 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.16.0-alpha.1
+
+- Added a versioned, strict plugin manifest contract with explicit capabilities, permissions, entry point metadata, Plugin API compatibility, and inclusive/exclusive Core SemVer bounds.
+- Added deterministic read-only plugin discovery, exact environment allow-list enablement, duplicate/missing/incompatible fail-closed validation, and an administrator-only catalog API.
+- Mounted the operator-managed plugin root read-only in Backend and Worker while intentionally keeping third-party code execution and upload/install APIs disabled for this phase.
+
 ## v0.15.0-alpha.38
 
 - Added PR/push CI for full Backend regression, Frontend test/build verification, portable Compose validation, and all production image builds.

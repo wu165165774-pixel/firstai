@@ -1,0 +1,98 @@
+{
+  "sprint": "10A",
+  "version": "0.16.0-alpha.1",
+  "recorded_at": "2026-08-17T11:07:50+08:00",
+  "tests": {
+    "plugin_catalog": {
+      "ran": 9,
+      "passed": 9,
+      "duration_seconds": 0.883
+    },
+    "release_engineering": {
+      "ran": 8,
+      "passed": 8,
+      "duration_seconds": 0.039
+    },
+    "authentication": {
+      "ran": 7,
+      "passed": 7,
+      "duration_seconds": 4.053
+    },
+    "schema_migrations": {
+      "ran": 10,
+      "passed": 10,
+      "duration_seconds": 9.225
+    },
+    "backend_full": {
+      "ran": 507,
+      "passed": 507,
+      "duration_seconds": 137.525
+    },
+    "frontend": {
+      "ran": 19,
+      "passed": 19
+    },
+    "python_compileall": true,
+    "powershell_plugin_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "git_diff_check": true
+  },
+  "plugin_contract": {
+    "plugin_api_version": 1,
+    "core_version": "0.16.0-alpha.1",
+    "manifest_version": 1,
+    "root_available": true,
+    "configuration_valid": true,
+    "configured_enabled": [],
+    "discovered_plugins": 0,
+    "execution_enabled": false,
+    "entry_points_imported": false,
+    "remote_install_api_exposed": false,
+    "admin_catalog_registered": true
+  },
+  "production_images": {
+    "backend": {
+      "built": true,
+      "image_sha256": "a04a8ff9e2a7b7a0437813675a8c59294c4ca6663157b797f14ab2e12e4fdf0d",
+      "build_context_bytes": 129750
+    },
+    "frontend": {
+      "built": true,
+      "image_sha256": "e9e0d379ab7812c492f983eb29a2cd6b46c02f38515a258af9c3832f5801c869",
+      "build_context_bytes": 43050
+    },
+    "worker": {
+      "built": true,
+      "image_sha256": "b18d7a924d51b773d956aa1d9574de572e950b3758d8227dc3383c40b73af235",
+      "build_context_bytes": 21490
+    }
+  },
+  "live_drill": {
+    "result": "OK",
+    "backend_status": 200,
+    "frontend_status": 200,
+    "worker_running": true,
+    "openapi_version": "0.16.0-alpha.1"
+  },
+  "automation": {
+    "hosted_ci_executed": false,
+    "hosted_release_executed": false,
+    "local_equivalent_gates_passed": true
+  },
+  "release_artifact": {
+    "local_drill_passed": true,
+    "file_count": 247,
+    "sha256": "2e0b36f08ed48c58a29c0ad88bd819ae09e6aa74c8bfe81c7bd70513235e586d",
+    "independent_verify_passed": true,
+    "repeat_archive_bytes_identical": true,
+    "plugin_mount_marker_included": true,
+    "installed_plugin_code_included": false,
+    "raw_acceptance_included": false
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "production_data_modified": false,
+  "result": "PASS"
+}

@@ -25,6 +25,7 @@ from app.schema_migrations.service import (
     SchemaMigrationService,
 )
 from app.temporal_graph.storage import TemporalGraphStorage
+from app.version import APP_VERSION
 from app.workflows.async_queue import WorkflowAsyncQueue
 
 
@@ -155,7 +156,7 @@ class SchemaMigrationTests(unittest.TestCase):
                 ).fetchone()
                 self.assertEqual(row[0], authority.key)
                 self.assertEqual(row[1], 1)
-                self.assertTrue(str(row[2]).startswith("0.15.0-alpha."))
+                self.assertEqual(str(row[2]), APP_VERSION)
 
         second = self.service.upgrade(
             data_root=self.data_root,

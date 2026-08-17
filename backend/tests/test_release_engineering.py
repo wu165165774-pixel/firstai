@@ -44,6 +44,7 @@ class ReleaseFixture:
         self._write(".env.example", "AUTH_ENABLED=false\n")
         self._write("README.md", "# Fixture\n")
         self._write("docs/operations/RELEASE.md", "release\n")
+        self._write("plugins/.gitkeep", "")
         self._write("scripts/release.ps1", "Write-Output ok\n")
         self._write(
             "data/sprint09d_acceptance.json",
@@ -128,6 +129,7 @@ class ReleaseEngineeringTests(ReleaseFixture, unittest.TestCase):
             self.assertIn("backend/.dockerignore", names)
             self.assertIn("frontend/index.html", names)
             self.assertIn("frontend/vite.config.js", names)
+            self.assertIn("plugins/.gitkeep", names)
             self.assertNotIn("data/sprint09d_acceptance.json", names)
             self.assertNotIn("data/private.db", names)
             manifest = json.loads(archive.read("release-manifest.json"))

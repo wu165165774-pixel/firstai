@@ -52,9 +52,12 @@ services:
       OLLAMA_URL: http://ollama:11434
       OLLAMA_HOST: http://ollama:11434
       PYTHONUNBUFFERED: "1"
+      PLUGIN_ROOT: /app/plugins
+      PLUGIN_ENABLED_JSON: "${PLUGIN_ENABLED_JSON:-[]}"
     volumes:
       - ./backend:/app
       - ./data:/app/data
+      - ./plugins:/app/plugins:ro
     depends_on:
       - ollama
     restart: unless-stopped

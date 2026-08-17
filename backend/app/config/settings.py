@@ -20,6 +20,12 @@ class Settings(BaseSettings):
 
     auth_tokens_json: str = "{}"
 
+    # Plugin manifests are discovered read-only. Third-party code execution is
+    # intentionally disabled until the runtime activation phase.
+    plugin_root: str = "/app/plugins"
+
+    plugin_enabled_json: str = "[]"
+
 
     # DeepSeek
 

@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.38
+* 当前代码版本：v0.16.0-alpha.1
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 09D 已完成；下一项 Sprint 1.0
+* 当前阶段：Sprint 10A 已完成；下一项 Sprint 10B
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.15.0-alpha.38
+* 当前代码版本：v0.16.0-alpha.1
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 09D 已完成；下一项 Sprint 1.0
+* 当前阶段：Sprint 10A 已完成；下一项 Sprint 10B
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3038,3 +3038,13 @@ Backend/Worker 在加载业务模块前拒绝高于程序支持版本的数据�
 `app.release_engineering` 校验 Backend、Frontend 与 package-lock 四处版本、目标 tag、同版本 PASS acceptance 和 Compose 可移植性。源码 release ZIP 使用固定成员顺序/时间戳/压缩，内置逐文件长度与 SHA-256 manifest；manifest 只记录 acceptance path/sprint/PASS 摘要，不打包可能含生产标识的原始验收 JSON。独立 verify 拒绝篡改、重复/额外成员和不安全路径。tag workflow 同时导出三镜像 gzip、生成 `SHA256SUMS`、上传 Actions artifact 并创建或更新 GitHub Release，不假设未配置的镜像 registry。
 
 升级流程要求先完成 09C.1 离线一致备份；回滚必须先验证目标旧版本 schema 上限，数据库版本不兼容时禁止直接启动旧 Backend，只能从隔离验证过的升级前完整备份恢复。Release 专项 `8/8`、Backend 全量 `498/498`、Frontend `19/19`、两套 Compose config 与三镜像生产构建通过；`.38` release drill 生成 237 文件确定性源码包，并通过独立复验与逐字节重建对比，最终哈希记录在 acceptance 与制品 `SHA256SUMS`。完整状态见 `docs/sprints/Sprint09D.md`；Sprint 09D 已完成，下一项为 Sprint 1.0。
+
+## v0.16.0-alpha.1 — Sprint 10A 插件契约与只读目录
+
+新增 `app.plugins` 边界和 Manifest v1。插件必须声明稳定 ID、自身 SemVer、entry point、capability、permission、Plugin API 版本以及 Core 最低/最高兼容范围；未知字段、重复声明、非法坐标和不成立的版本窗口由 Pydantic fail closed。Core 自有 SemVer 比较器支持 prerelease，兼容窗口采用 `min inclusive / max exclusive`，Plugin API 必须精确匹配。
+
+Backend 只扫描 `PLUGIN_ROOT` 一级 package 的 `novelforge-plugin.json`，单文件读取严格限制 64 KiB、package 数限制 100，并拒绝 package/manifest 符号链接。`PLUGIN_ENABLED_JSON` 是无通配符精确 allow-list；启用项缺失、重复、损坏或不兼容会阻止启动。Catalog 返回稳定错误码、manifest SHA-256 和声明，但不返回绝对路径、文件正文或异常详情。
+
+`GET /api/v1/plugins` 受既有 Bearer 保护并要求 `admin` role。Backend/Worker 通过 Compose 只读挂载 `./plugins`，本地插件默认不进入 Git 或源码发行包。本阶段明确保持 `execution_enabled=false` 与 `loaded=false`：发现过程不会导入 entry point，也没有上传/远程安装 API；permission 只是审计声明，不代表授权。
+
+Plugin 专项 `9/9`、Release `8/8`、Authentication `7/7`、Schema Migration `10/10`、Backend 全量 `507/507`、Frontend `19/19` 和两套 Compose config 已通过。Backend/Frontend/Worker 三镜像生产构建与 live Plugin drill 通过：OpenAPI `0.16.0-alpha.1`、Plugin API `1`、插件根可用、空目录、配置有效，Backend/Frontend HTTP 200、Worker running，且执行仍为关闭。完整状态见 `docs/sprints/Sprint10A.md`；Sprint 10A 已完成，下一项为 Sprint 10B 受控运行时激活。

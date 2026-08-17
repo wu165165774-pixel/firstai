@@ -172,6 +172,7 @@ class ReleaseEngineeringService:
             "docs/CHANGELOG.md",
             "docs/CURRENT_IMPLEMENTATION.md",
             "docs/ROADMAP.md",
+            "plugins/.gitkeep",
         }:
             return True
         prefixes = (
