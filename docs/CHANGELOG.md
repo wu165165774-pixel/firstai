@@ -9,7 +9,7 @@
 - Added a real local-Qwen product journey drill covering Project/Story Bible/Canon alignment, candidate-only Planner generation, explicit planning acceptance, idempotent async Workflow, quality gate, explicit Manuscript acceptance, fact projection, deterministic export, restart durability, and user-scope isolation.
 - Promoted the five application/package identities to `1.0.0` without changing schema v1 or the released planning, manuscript, plugin, authentication, deployment, or dependency boundaries.
 - Recorded a 15/15 local release drill and post-CI-fix verification with 535/535 Backend tests, 21/21 Frontend tests, complete real-Qwen journey evidence, deterministic export, and `local_decision=go`; Hosted distribution remains pending until CI and GitHub Release actually succeed.
-- Replaced invalid job-level `runner.temp` expressions in Hosted CI/Release with isolated Ubuntu temporary paths and made release validation reject this pre-job workflow failure mode.
+- Replaced invalid job-level `runner.temp` expressions in Hosted CI/Release with isolated Ubuntu temporary paths and made release validation reject this pre-job workflow failure mode; corrected the Frontend test command to use Node 22's `--experimental-test-isolation` spelling.
 
 ## v1.0.0-rc.2
 
