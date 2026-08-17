@@ -16,7 +16,7 @@ NovelForge 是面向长篇小说的本地优先 AI 创作系统。它把故事�
 - Prompt Catalog：内部 LLM 调用记录不可伪造的 prompt revision 与最终渲染摘要，Planner/Workflow 在工作台展示所选版本。
 - 小说级确定性 ZIP 导出：仅包含 accepted manuscript、当前规划与逐文件 SHA-256 manifest。
 - CI 与 tag 发布工程：自动回归、三镜像构建、确定性源码制品、checksum 及升级/回滚 runbook。
-- 插件契约与只读目录：manifest、Plugin API/Core SemVer 兼容、权限声明、精确启停 allow-list 和管理员 Catalog；当前阶段不执行第三方代码。
+- 默认关闭的本地可信插件运行时：Manifest v2 完整性、Plugin API/Core SemVer 兼容、显式权限授权、事务式扩展注册、生命周期回滚和管理员 Catalog。
 
 ## 启动
 
@@ -54,7 +54,7 @@ docker-compose -f docker-compose.yml -f docker-compose.worker.yml up -d --build
 
 启用后，除 `/api/v1/health` 外的业务 API 都要求 `Authorization: Bearer <token>`。普通用户只能访问令牌绑定的用户、小说、Workflow Run 和 Memory；队列、Worker、DLQ、Operations 与 Prometheus 接口要求 `admin`。工作台令牌只保存在浏览器 `sessionStorage`，关闭会话后清除。不要把真实令牌写入仓库、URL、日志或验收文档。
 
-插件 manifest 放在 `plugins/<package>/novelforge-plugin.json`，通过 `PLUGIN_ENABLED_JSON` 精确声明允许启用的插件 ID。`GET /api/v1/plugins` 仅允许管理员读取，返回兼容性和声明能力，不返回绝对路径，也不会导入 entry point。完整契约见 [插件运维说明](docs/operations/PLUGINS.md)。
+插件 manifest 放在 `plugins/<package>/novelforge-plugin.json`，通过 `PLUGIN_ENABLED_JSON` 精确声明允许启用的插件 ID。代码执行默认关闭；启用时还需要 Manifest v2 entry point SHA-256、`PLUGIN_EXECUTION_ENABLED=true` 和 `PLUGIN_PERMISSION_GRANTS_JSON` 显式授权。`GET /api/v1/plugins` 仅允许管理员读取并返回当前 Backend 进程状态。插件运行在宿主应用进程权限下，不是恶意代码沙箱，只应加载来源可信且已审计的本地代码。完整契约见 [插件运维说明](docs/operations/PLUGINS.md)。
 
 可在 Backend 容器内用临时随机令牌运行不暴露宿主端口的认证矩阵验收：
 

@@ -35,9 +35,24 @@ PluginPermission = Literal[
 PluginState = Literal[
     "disabled",
     "enabled",
+    "failed",
     "incompatible",
     "invalid",
 ]
+
+
+class PluginIntegrity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry_point_sha256: str = Field(min_length=64, max_length=64)
+
+    @field_validator("entry_point_sha256")
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", normalized):
+            raise ValueError("entry_point_sha256 must be hexadecimal")
+        return normalized
 
 
 class PluginCompatibility(BaseModel):
@@ -76,7 +91,7 @@ class PluginCompatibility(BaseModel):
 class PluginManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    manifest_version: Literal[1]
+    manifest_version: Literal[1, 2]
     plugin_id: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     version: str = Field(min_length=1, max_length=64)
@@ -85,6 +100,7 @@ class PluginManifest(BaseModel):
     capabilities: list[PluginCapability] = Field(min_length=1, max_length=20)
     permissions: list[PluginPermission] = Field(default_factory=list, max_length=20)
     requires: PluginCompatibility
+    integrity: PluginIntegrity | None = None
 
     @field_validator("plugin_id")
     @classmethod
@@ -129,12 +145,21 @@ class PluginManifest(BaseModel):
             raise ValueError("duplicate declarations are not allowed")
         return value
 
+    @model_validator(mode="after")
+    def validate_manifest_generation(self) -> "PluginManifest":
+        if self.manifest_version == 2 and self.integrity is None:
+            raise ValueError("Manifest v2 requires integrity metadata")
+        if self.manifest_version == 1 and self.integrity is not None:
+            raise ValueError("Manifest v1 must not declare v2 integrity metadata")
+        return self
+
 
 class PluginCatalogItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     package: str
     plugin_id: str | None = None
+    manifest_version: int | None = None
     name: str | None = None
     version: str | None = None
     state: PluginState
@@ -159,6 +184,8 @@ class PluginCatalogData(BaseModel):
     configuration_valid: bool
     configured_enabled: list[str] = Field(default_factory=list)
     unknown_enabled: list[str] = Field(default_factory=list)
+    active_plugins: list[str] = Field(default_factory=list)
+    runtime_generation: int = 0
     plugins: list[PluginCatalogItem] = Field(default_factory=list)
 
 

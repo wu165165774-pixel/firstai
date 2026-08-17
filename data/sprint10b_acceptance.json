@@ -1,0 +1,114 @@
+{
+  "sprint": "10B",
+  "version": "0.16.0-alpha.2",
+  "recorded_at": "2026-08-17T11:43:36+08:00",
+  "tests": {
+    "plugin_runtime": {
+      "ran": 12,
+      "passed": 12,
+      "duration_seconds": 2.988
+    },
+    "plugin_catalog": {
+      "ran": 9,
+      "passed": 9,
+      "duration_seconds": 0.847
+    },
+    "standalone_worker": {
+      "ran": 9,
+      "passed": 9,
+      "duration_seconds": 6.92
+    },
+    "authentication": {
+      "ran": 7,
+      "passed": 7,
+      "duration_seconds": 7.685
+    },
+    "release_engineering": {
+      "ran": 8,
+      "passed": 8,
+      "duration_seconds": 0.038
+    },
+    "schema_migrations": {
+      "ran": 10,
+      "passed": 10,
+      "duration_seconds": 13.738
+    },
+    "backend_full": {
+      "ran": 519,
+      "passed": 519,
+      "duration_seconds": 232.106
+    },
+    "frontend": {
+      "ran": 19,
+      "passed": 19
+    },
+    "frontend_production_build": true,
+    "python_compileall": true,
+    "powershell_runtime_drill_syntax": true,
+    "compose_base_config": true,
+    "compose_worker_overlay_config": true,
+    "git_diff_check": true
+  },
+  "plugin_runtime": {
+    "plugin_api_version": 1,
+    "core_version": "0.16.0-alpha.2",
+    "runtime_manifest_version": 2,
+    "default_execution_enabled": false,
+    "entry_point_integrity_verified": true,
+    "permission_admission_enabled": true,
+    "transactional_extension_registration": true,
+    "backend_lifecycle_integrated": true,
+    "worker_lifecycle_integrated": true,
+    "startup_cancellation_cleanup_verified": true,
+    "failure_rollback_verified": true,
+    "exception_details_exposed": false,
+    "remote_install_api_exposed": false,
+    "hot_reload_enabled": false,
+    "os_or_python_sandboxed": false,
+    "trusted_local_code_only": true
+  },
+  "production_images": {
+    "backend": {
+      "built": true,
+      "image_sha256": "45d482555aa226a32ebba3ad8c39ad5df460769566d549f36780240f2e79d4ad"
+    },
+    "frontend": {
+      "built": true,
+      "image_sha256": "e9e0d379ab7812c492f983eb29a2cd6b46c02f38515a258af9c3832f5801c869"
+    },
+    "worker": {
+      "built": true,
+      "image_sha256": "22d6dc679b19bd5401209fd2392ef17b7edc1f878063007df97e5fff0f7bc575"
+    }
+  },
+  "live_drill": {
+    "result": "OK",
+    "backend_status": 200,
+    "frontend_status": 200,
+    "worker_running": true,
+    "openapi_version": "0.16.0-alpha.2",
+    "manifest_version": 2,
+    "entry_point_sha256": "a9670a2a2228d38794f14cbc3f20c42ef4e0a00e60650e26201443b347bc6e28",
+    "backend_plugin_loaded": true,
+    "worker_plugin_marker": true,
+    "restored_to_execution_disabled": true,
+    "temporary_fixture_removed": true
+  },
+  "automation": {
+    "hosted_ci_executed": false,
+    "hosted_release_executed": false,
+    "local_equivalent_gates_passed": true
+  },
+  "release_artifact": {
+    "local_drill_passed": true,
+    "file_count": 250,
+    "sha256": "1ab44b7eecb3d1d45b7b49580c1a91301db1cc1f2e764576bc4274274d52ec20",
+    "independent_verify_passed": true,
+    "repeat_archive_bytes_identical": true
+  },
+  "secrets_recorded": false,
+  "provider_endpoints_recorded": false,
+  "business_content_recorded": false,
+  "production_data_modified": false,
+  "result": "PASS"
+}

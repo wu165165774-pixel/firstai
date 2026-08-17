@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     plugin_enabled_json: str = "[]"
 
+    plugin_execution_enabled: bool = False
+
+    plugin_permission_grants_json: str = "{}"
+
 
     # DeepSeek
 

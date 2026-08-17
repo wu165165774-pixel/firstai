@@ -3,6 +3,12 @@
 ## Unreleased
 - Added Sprint 03A LLM Core framework.
 
+## v0.16.0-alpha.2
+
+- Added an opt-in trusted local plugin runtime with Manifest v2 entry-point SHA-256 verification, single-read verified source execution, explicit permission admission, and default-off Compose configuration.
+- Added capability-scoped, plugin-namespaced transactional extension registration plus sealed activation contexts, synchronous/asynchronous lifecycle hooks, reverse-order rollback, and sanitized failure states.
+- Integrated activation and guaranteed teardown into Backend and Worker lifecycles, including startup cancellation and worker failure, while retaining Manifest v1 as catalog-only and exposing no upload, remote-install, or hot-reload API.
+
 ## v0.16.0-alpha.1
 
 - Added a versioned, strict plugin manifest contract with explicit capabilities, permissions, entry point metadata, Plugin API compatibility, and inclusive/exclusive Core SemVer bounds.

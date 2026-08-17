@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ PLUGIN_API_VERSION = 1
 PLUGIN_MANIFEST_NAME = "novelforge-plugin.json"
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_PLUGIN_PACKAGES = 100
+PACKAGE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class PluginConfigurationError(ValueError):
@@ -61,9 +63,11 @@ class PluginCatalogService:
         plugin_root: str | Path | None = None,
         enabled_json: str | None = None,
         core_version: str = APP_VERSION,
+        execution_enabled: bool | None = None,
     ) -> None:
         self._plugin_root = Path(plugin_root) if plugin_root is not None else None
         self._enabled_json = enabled_json
+        self._execution_enabled = execution_enabled
         self.core_version = core_version
         parse_semantic_version(core_version)
 
@@ -75,6 +79,12 @@ class PluginCatalogService:
 
     def _enabled(self) -> tuple[str, ...]:
         return configured_plugin_ids(self._enabled_json)
+
+    @property
+    def execution_enabled(self) -> bool:
+        if self._execution_enabled is not None:
+            return self._execution_enabled
+        return bool(settings.plugin_execution_enabled)
 
     @staticmethod
     def _safe_candidate_id(value: Any) -> str | None:
@@ -124,6 +134,8 @@ class PluginCatalogService:
         enabled_ids: set[str],
     ) -> PluginCatalogItem:
         package = package_path.name[:128]
+        if not PACKAGE_NAME_PATTERN.fullmatch(package_path.name):
+            return self._invalid(package, "invalid_package_name")
         if package_path.is_symlink():
             return self._invalid(package, "unsafe_package_link")
         manifest_path = package_path / PLUGIN_MANIFEST_NAME
@@ -175,6 +187,7 @@ class PluginCatalogService:
         return PluginCatalogItem(
             package=package,
             plugin_id=manifest.plugin_id,
+            manifest_version=manifest.manifest_version,
             name=manifest.name,
             version=manifest.version,
             state=state,
@@ -197,7 +210,7 @@ class PluginCatalogService:
             return PluginCatalogData(
                 plugin_api_version=PLUGIN_API_VERSION,
                 core_version=self.core_version,
-                execution_enabled=False,
+                execution_enabled=self.execution_enabled,
                 root_available=False,
                 configuration_valid=not enabled,
                 configured_enabled=list(enabled),
@@ -256,7 +269,7 @@ class PluginCatalogService:
         return PluginCatalogData(
             plugin_api_version=PLUGIN_API_VERSION,
             core_version=self.core_version,
-            execution_enabled=False,
+            execution_enabled=self.execution_enabled,
             root_available=root_available,
             configuration_valid=configuration_valid,
             configured_enabled=list(enabled),

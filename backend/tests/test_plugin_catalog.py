@@ -15,6 +15,7 @@ from app.plugins.service import (
     configured_plugin_ids,
     validate_plugin_configuration,
 )
+from app.plugins.runtime import PluginRuntimeManager
 from app.plugins.versioning import parse_semantic_version
 from app.version import APP_VERSION
 
@@ -202,12 +203,15 @@ class PluginCatalogTests(unittest.TestCase):
 class PluginCatalogApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.previous_service = plugins_api.plugin_catalog_service
+        self.previous_runtime = plugins_api.plugin_runtime_manager
         self.previous_auth_enabled = settings.auth_enabled
         self.previous_tokens = settings.auth_tokens_json
-        plugins_api.plugin_catalog_service = PluginCatalogService(
-            plugin_root=self.temp_dir.name,
-            enabled_json="[]",
+        plugins_api.plugin_runtime_manager = PluginRuntimeManager(
+            PluginCatalogService(
+                plugin_root=self.temp_dir.name,
+                enabled_json="[]",
+                execution_enabled=False,
+            )
         )
         settings.auth_enabled = True
         settings.auth_tokens_json = json.dumps(
@@ -225,7 +229,7 @@ class PluginCatalogApiTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
-        plugins_api.plugin_catalog_service = self.previous_service
+        plugins_api.plugin_runtime_manager = self.previous_runtime
         settings.auth_enabled = self.previous_auth_enabled
         settings.auth_tokens_json = self.previous_tokens
         self.temp_dir.cleanup()

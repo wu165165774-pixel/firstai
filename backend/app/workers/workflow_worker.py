@@ -11,12 +11,15 @@ schema_migration_service.assert_no_newer_versions()
 from app.agents.bootstrap import (
     agent_manager,
 )
+from app.plugins.bootstrap import plugin_catalog_service, plugin_runtime_manager
+from app.plugins.runtime import configured_permission_grants
+from app.plugins.service import validate_plugin_configuration
 from app.workflows.async_executor import (
     AsyncWorkflowExecutor,
 )
 
 
-async def run_worker() -> None:
+async def _run_worker_loop() -> None:
     """
     Run the standalone workflow worker until
     SIGINT or SIGTERM requests graceful stop.
@@ -101,6 +104,16 @@ async def run_worker() -> None:
         stop_task,
         return_exceptions=True,
     )
+
+
+async def run_worker() -> None:
+    configured_permission_grants()
+    validate_plugin_configuration(plugin_catalog_service)
+    await plugin_runtime_manager.activate_enabled()
+    try:
+        await _run_worker_loop()
+    finally:
+        await plugin_runtime_manager.deactivate_all()
 
 
 def main() -> None:

@@ -27,6 +27,8 @@ from app.core.exceptions import NovelForgeException
 from app.core.middleware import RequestLogMiddleware
 from app.core.auth import authorize_request, validate_auth_configuration
 from app.fact_projection.service import fact_projection_service
+from app.plugins.bootstrap import plugin_catalog_service, plugin_runtime_manager
+from app.plugins.runtime import configured_permission_grants
 from app.plugins.service import validate_plugin_configuration
 from app.rag.consistency import memory_index_consistency_service
 from app.knowledge.manager import external_knowledge_manager
@@ -47,68 +49,74 @@ async def lifespan(app: FastAPI):
     )
 
     validate_auth_configuration()
-    plugin_catalog = validate_plugin_configuration()
+    configured_permission_grants()
+    validate_plugin_configuration(plugin_catalog_service)
+    plugin_catalog = await plugin_runtime_manager.activate_enabled()
     logger.info(
         "Plugin catalog validation complete: "
         f"discovered={len(plugin_catalog.plugins)}, "
         f"enabled={len(plugin_catalog.configured_enabled)}, "
-        "execution_enabled=false"
+        f"execution_enabled={str(plugin_catalog.execution_enabled).lower()}, "
+        f"active={len(plugin_catalog.active_plugins)}"
     )
 
     try:
-        result = await memory_index_consistency_service.check_and_repair()
+        try:
+            result = await memory_index_consistency_service.check_and_repair()
 
-        if result.consistent:
+            if result.consistent:
+                logger.info(
+                    "Memory index startup check complete: "
+                    f"sqlite_count={result.sqlite_count}, "
+                    f"faiss_count={result.faiss_count_after}, "
+                    f"rebuilt={result.rebuilt}"
+                )
+            else:
+                logger.error(
+                    "Memory index startup check failed: "
+                    f"sqlite_count={result.sqlite_count}, "
+                    f"faiss_count={result.faiss_count_after}, "
+                    f"error={result.error}"
+                )
+
+        except Exception:
+            logger.exception(
+                "Unexpected memory index startup check failure. "
+                "Backend will continue using SQLite."
+            )
+
+        try:
+            result = await external_knowledge_manager.check_and_repair_index()
             logger.info(
-                "Memory index startup check complete: "
+                "External knowledge index startup check complete: "
                 f"sqlite_count={result.sqlite_count}, "
                 f"faiss_count={result.faiss_count_after}, "
-                f"rebuilt={result.rebuilt}"
+                f"rebuilt={result.rebuilt}, "
+                f"consistent={result.consistent}"
             )
-        else:
-            logger.error(
-                "Memory index startup check failed: "
-                f"sqlite_count={result.sqlite_count}, "
-                f"faiss_count={result.faiss_count_after}, "
-                f"error={result.error}"
+        except Exception:
+            logger.exception(
+                "Unexpected external knowledge index startup check failure. "
+                "Backend will continue using authoritative SQLite data."
             )
 
-    except Exception:
-        logger.exception(
-            "Unexpected memory index startup check failure. "
-            "Backend will continue using SQLite."
-        )
+        try:
+            recovered = await fact_projection_service.recover_incomplete(
+                limit=1000
+            )
+            logger.info(
+                "Accepted fact projection startup recovery complete: "
+                f"processed={recovered}"
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected accepted fact projection recovery failure. "
+                "Backend will continue; pending projections remain retryable."
+            )
 
-    try:
-        result = await external_knowledge_manager.check_and_repair_index()
-        logger.info(
-            "External knowledge index startup check complete: "
-            f"sqlite_count={result.sqlite_count}, "
-            f"faiss_count={result.faiss_count_after}, "
-            f"rebuilt={result.rebuilt}, "
-            f"consistent={result.consistent}"
-        )
-    except Exception:
-        logger.exception(
-            "Unexpected external knowledge index startup check failure. "
-            "Backend will continue using authoritative SQLite data."
-        )
-
-    try:
-        recovered = await fact_projection_service.recover_incomplete(
-            limit=1000
-        )
-        logger.info(
-            "Accepted fact projection startup recovery complete: "
-            f"processed={recovered}"
-        )
-    except Exception:
-        logger.exception(
-            "Unexpected accepted fact projection recovery failure. "
-            "Backend will continue; pending projections remain retryable."
-        )
-
-    yield
+        yield
+    finally:
+        await plugin_runtime_manager.deactivate_all()
 
 
 app = FastAPI(

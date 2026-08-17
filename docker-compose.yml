@@ -43,6 +43,8 @@ services:
       AUTH_TOKENS_JSON: "${AUTH_TOKENS_JSON:-{}}"
       PLUGIN_ROOT: /app/plugins
       PLUGIN_ENABLED_JSON: "${PLUGIN_ENABLED_JSON:-[]}"
+      PLUGIN_EXECUTION_ENABLED: "${PLUGIN_EXECUTION_ENABLED:-false}"
+      PLUGIN_PERMISSION_GRANTS_JSON: "${PLUGIN_PERMISSION_GRANTS_JSON:-{}}"
       FAISS_INDEX_DIR: /app/data/vector_db
 
     ports:

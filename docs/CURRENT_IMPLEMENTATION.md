@@ -4,10 +4,10 @@
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.16.0-alpha.1
+* 当前代码版本：v0.16.0-alpha.2
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10A 已完成；下一项 Sprint 10B
+* 当前阶段：Sprint 10B 已完成；下一项为 1.0 Release Candidate 收口
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -627,10 +627,10 @@ v0.13.0
 
 * 项目名称：NovelForge
 * 当前开发分支：master
-* 当前代码版本：v0.16.0-alpha.1
+* 当前代码版本：v0.16.0-alpha.2
 * 文档状态：当前实现快照
 * 快照日期：2026-08-17
-* 当前阶段：Sprint 10A 已完成；下一项 Sprint 10B
+* 当前阶段：Sprint 10B 已完成；下一项为 1.0 Release Candidate 收口
 
 本文档记录 NovelForge 当前已经实现并完成基础验证的功能。
 
@@ -3048,3 +3048,15 @@ Backend 只扫描 `PLUGIN_ROOT` 一级 package 的 `novelforge-plugin.json`，�
 `GET /api/v1/plugins` 受既有 Bearer 保护并要求 `admin` role。Backend/Worker 通过 Compose 只读挂载 `./plugins`，本地插件默认不进入 Git 或源码发行包。本阶段明确保持 `execution_enabled=false` 与 `loaded=false`：发现过程不会导入 entry point，也没有上传/远程安装 API；permission 只是审计声明，不代表授权。
 
 Plugin 专项 `9/9`、Release `8/8`、Authentication `7/7`、Schema Migration `10/10`、Backend 全量 `507/507`、Frontend `19/19` 和两套 Compose config 已通过。Backend/Frontend/Worker 三镜像生产构建与 live Plugin drill 通过：OpenAPI `0.16.0-alpha.1`、Plugin API `1`、插件根可用、空目录、配置有效，Backend/Frontend HTTP 200、Worker running，且执行仍为关闭。完整状态见 `docs/sprints/Sprint10A.md`；Sprint 10A 已完成，下一项为 Sprint 10B 受控运行时激活。
+
+## v0.16.0-alpha.2 — Sprint 10B 受控插件运行时
+
+Manifest v2 在 10A 契约上增加 entry point SHA-256。运行时在激活前重新核对已发现 Manifest 的哈希，只接受插件一级目录中的单文件 Python entry point，限制源码为 1 MiB，拒绝符号链接，并直接编译一次读取且已验证的字节。Manifest v1 继续用于只读 Catalog，但不能执行；执行总开关默认关闭。
+
+`PLUGIN_PERMISSION_GRANTS_JSON` 为每个插件提供显式权限准入。插件上下文只公开版本、声明能力、已授予权限、扩展注册与 cleanup 注册；扩展必须属于已声明 capability 且使用插件 ID 命名空间。激活成功后上下文封存，所有扩展一次性提交；任一插件失败时，候选和本轮已激活插件按逆序卸载并回滚扩展。同步/异步 activate、deactivate 和 cleanup 均受支持，Catalog 暴露 active order、runtime generation 和稳定错误码而不返回异常详情。
+
+Backend 与独立 Worker 都在启动时激活，在正常退出、Worker 异常或 Backend 启动取消时保证清理。本运行时面向本地可信、已审计且哈希固定的插件，不是恶意代码沙箱；permission 是准入边界而非 Python/OS 权限隔离。系统仍不提供上传、远程安装、在线升级或热重载 API，具体 capability 连接 Core 业务注册表需要后续 Core-owned adapter。
+
+Plugin Runtime 专项 `12/12`、Plugin Catalog `9/9`、Worker `9/9`、Authentication `7/7`、Release Engineering `8/8`、Schema Migration `10/10`、Backend 全量 `519/519` 与 Frontend `19/19` 均通过；Python compileall、PowerShell drill 语法、两套 Compose config、`git diff --check` 和 Frontend Docker/Vite 生产构建通过。
+
+真实 live drill 使用不进入 Git 的临时 Manifest v2 fixture，在 Backend 和 Worker 两个容器内完成完整性固定、权限准入和实际激活；Backend Catalog `loaded=true`，Worker 激活标记存在，三服务健康。演练随后重建 Backend/Worker 恢复 `PLUGIN_EXECUTION_ENABLED=false`，精确删除 fixture，业务数据未修改。Backend/Frontend/Worker 镜像分别为 `45d48255...d4ad`、`e9e0d379...c869`、`22d6dc67...c575`。完整状态见 `docs/sprints/Sprint10B.md` 和 `docs/operations/PLUGINS.md`；Sprint 10B 已完成，下一项为 1.0 Release Candidate 收口。
